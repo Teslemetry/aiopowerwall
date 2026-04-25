@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aiopowerwall"
+version = "0.1.0"
+description = "Async Tesla Powerwall 3 client over the TEDAPI v1r RSA-signed LAN protocol."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Teslemetry" }]
+keywords = ["tesla", "powerwall", "tedapi", "asyncio", "aiohttp", "home-assistant"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+    "Typing :: Typed",
+]
+dependencies = [
+    "aiohttp>=3.9",
+    "cryptography>=41",
+    "protobuf>=4.25",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.8",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "types-protobuf",
+]
+
+[project.urls]
+Homepage = "https://github.com/teslemetry/aiopowerwall"
+Issues = "https://github.com/teslemetry/aiopowerwall/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aiopowerwall"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/aiopowerwall", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src/aiopowerwall"]
+
+[[tool.mypy.overrides]]
+# Generated protobuf bindings ship without strict stubs; they're an
+# implementation detail of the transport.
+module = "aiopowerwall.proto.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["google.protobuf.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["src/aiopowerwall/proto/*_pb2.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM", "RUF"]
+ignore = ["E501"]  # long lines come from the verbatim GraphQL constants
