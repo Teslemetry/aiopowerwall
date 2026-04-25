@@ -79,6 +79,16 @@ All errors are subclasses of `PowerwallError`:
 - `PowerwallFaultError` — signed-message fault (key inactive, expired, etc.)
 - `PowerwallProtocolError` — malformed response
 
+## Acknowledgements
+
+This project builds on the protocol research and reference implementation in
+[`pypowerwall`](https://github.com/jasonacox/pypowerwall) by
+[Jason Cox](https://github.com/jasonacox), distributed under the
+[MIT License](https://github.com/jasonacox/pypowerwall/blob/main/LICENSE).
+Huge thanks to Jason and the pypowerwall contributors for reverse-engineering
+and documenting the TEDAPI protocol.
+
 ## License
 
-Apache-2.0 (see `LICENSE`).
+MIT (see `LICENSE`). Original pypowerwall copyright and license notice are
+retained in `LICENSE`.
