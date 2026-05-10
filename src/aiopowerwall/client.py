@@ -29,7 +29,6 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from . import queries
 from .exceptions import (
-    PowerwallConnectionError,
     PowerwallError,
     PowerwallProtocolError,
 )
@@ -493,6 +492,11 @@ class PowerwallClient:
                 f"Malformed v1r query response: {err}"
             ) from err
         if not envelope.HasField("payload"):
+            _LOGGER.warning(
+                "v1r query response missing payload (inner len=%d parsed=%s)",
+                len(inner_bytes),
+                str(envelope).replace("\n", " | "),
+            )
             raise PowerwallProtocolError("v1r query response missing payload")
         text: str = envelope.payload.recv.text
         if not text:
@@ -623,6 +627,14 @@ class PowerwallClient:
                 f"Malformed FileStore response: {err}"
             ) from err
         if not response.HasField("filestore"):
+            _LOGGER.warning(
+                "FileStore response missing filestore payload "
+                "(name=%s inner len=%d hex=%s parsed=%s)",
+                name,
+                len(inner),
+                inner.hex(),
+                str(response).replace("\n", " | "),
+            )
             raise PowerwallProtocolError(
                 "FileStore response missing filestore payload"
             )
@@ -674,6 +686,14 @@ class PowerwallClient:
         if not response.HasField("teg") or not response.teg.HasField(response_field):
             if allow_missing_response:
                 return response
+            _LOGGER.warning(
+                "TEG response missing %s (request=%s inner len=%d hex=%s parsed=%s)",
+                response_field,
+                request_field,
+                len(inner),
+                inner.hex(),
+                str(response).replace("\n", " | "),
+            )
             raise PowerwallProtocolError(
                 f"TEG response missing {response_field}"
             )
@@ -697,7 +717,4 @@ class PowerwallClient:
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
     "PowerwallClient",
-    # Re-exports from .exceptions are useful at the call site without the
-    # consumer having to know about the submodule layout.
-    "PowerwallConnectionError",
 ]

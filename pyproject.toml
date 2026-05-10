@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "Teslemetry" }]
+authors = [{ name = "Teslemetry", email = "hello@teslemetry.com" }]
 keywords = ["tesla", "powerwall", "tedapi", "asyncio", "aiohttp", "home-assistant"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -41,8 +41,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/teslemetry/aiopowerwall"
-Issues = "https://github.com/teslemetry/aiopowerwall/issues"
+Homepage = "https://github.com/Teslemetry/aiopowerwall"
+Repository = "https://github.com/Teslemetry/aiopowerwall"
+Issues = "https://github.com/Teslemetry/aiopowerwall/issues"
+Changelog = "https://github.com/Teslemetry/aiopowerwall/releases"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aiopowerwall"]

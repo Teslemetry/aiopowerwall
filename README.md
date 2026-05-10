@@ -3,11 +3,17 @@
 An async Tesla Powerwall 3 client built on `aiohttp`, written for Home
 Assistant and any other asyncio code.
 
+## Status
+
+**Beta (0.x).** The wire protocol and the public Python API may change
+between minor versions until 1.0. Pin a tight version range if you depend
+on this library in production.
+
 This library speaks the Powerwall's **TEDAPI v1r** protocol — RSA-signed
-protobuf messages over the wired LAN to `192.168.91.1`. It is intentionally
+protobuf messages directly to your Powerwall. It is intentionally
 scoped to:
 
-- Powerwall 3 only
+- Powerwall 3, and updated Powerwall 2 (untested)
 - Local LAN access only (no cloud telemetry)
 - Read + control commands (status, config, firmware, components, max-backup)
 
