@@ -129,6 +129,10 @@ class V1rTransport:
                     raise PowerwallAuthenticationError(
                         f"Login rejected ({resp.status}): check the gateway password"
                     )
+                if resp.status in _RATE_LIMIT_STATUSES:
+                    raise PowerwallRateLimitError(
+                        f"Rate-limited by gateway on login (status {resp.status})"
+                    )
                 if resp.status != 200:
                     body = await resp.text()
                     raise PowerwallProtocolError(
@@ -203,7 +207,25 @@ class V1rTransport:
             raise PowerwallFaultError(fault_name)
 
         inner: bytes = response.protobuf_message_as_bytes
+        # The gateway signals a rejected RSA signature by returning HTTP 200
+        # with no MESSAGEFAULT and a MessageEnvelope whose `common.placeholder`
+        # carries the literal "v1r: client authorization not verified". Detect
+        # it centrally so callers see a clear auth error instead of every
+        # downstream parser failing with "missing payload".
+        if b"v1r: client authorization not verified" in inner:
+            raise PowerwallAuthenticationError(
+                "v1r: client authorization not verified — the RSA key is not "
+                "paired with this Powerwall. Register the matching public key "
+                "via the Tesla Fleet API before calling v1r endpoints."
+            )
         if not inner:
+            _LOGGER.warning(
+                "v1r RoutableMessage has empty protobuf_message_as_bytes; "
+                "full response (len=%d): %s\nparsed=%s",
+                len(content),
+                content.hex(),
+                str(response).replace("\n", " | "),
+            )
             raise PowerwallProtocolError("RoutableMessage response is empty")
         return inner
 
