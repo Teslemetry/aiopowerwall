@@ -33,7 +33,7 @@ CONTROLLER_CODE: Final[bytes] = (
 )
 
 CONTROLLER_VARIABLES: Final[str] = (
-    '{"msaComp":{"types" :["PVS","PVAC", "TESYNC", "TEPINV", "TETHC", "STSTSM",  "TEMSA", "TEPINV" ]},\n\t"msaSignals":[\n\t"MSA_pcbaId",\n\t"MSA_usageId",\n\t"MSA_appGitHash",\n\t"PVAC_Fan_Speed_Actual_RPM",\n\t"PVAC_Fan_Speed_Target_RPM",\n\t"MSA_HeatingRateOccurred",\n\t"THC_AmbientTemp",\n\t"METER_Z_CTA_InstRealPower",\n\t"METER_Z_CTA_InstReactivePower",\n\t"METER_Z_CTA_I",\n\t"METER_Z_VL1G",\n\t"METER_Z_CTB_InstRealPower",\n\t"METER_Z_CTB_InstReactivePower",\n\t"METER_Z_CTB_I",\n\t"METER_Z_VL2G",\n\t"METER_Z_CTC_InstRealPower",\n\t"METER_Z_CTC_InstReactivePower",\n\t"METER_Z_CTC_I",\n\t"METER_Z_VL3G",\n\t"METER_Z_LifetimeEnergyExport",\n\t"METER_Z_LifetimeEnergyImport"]}'
+    '{"msaComp":{"types" :["PVS","PVAC", "TESYNC", "TEPINV", "TETHC", "STSTSM",  "TEMSA", "TEPINV", "PW3BMS" ]},\n\t"msaSignals":[\n\t"MSA_pcbaId",\n\t"MSA_usageId",\n\t"MSA_appGitHash",\n\t"PVAC_Fan_Speed_Actual_RPM",\n\t"PVAC_Fan_Speed_Target_RPM",\n\t"MSA_HeatingRateOccurred",\n\t"THC_AmbientTemp",\n\t"METER_Z_CTA_InstRealPower",\n\t"METER_Z_CTA_InstReactivePower",\n\t"METER_Z_CTA_I",\n\t"METER_Z_VL1G",\n\t"METER_Z_CTB_InstRealPower",\n\t"METER_Z_CTB_InstReactivePower",\n\t"METER_Z_CTB_I",\n\t"METER_Z_VL2G",\n\t"METER_Z_CTC_InstRealPower",\n\t"METER_Z_CTC_InstReactivePower",\n\t"METER_Z_CTC_I",\n\t"METER_Z_VL3G",\n\t"METER_Z_LifetimeEnergyExport",\n\t"METER_Z_LifetimeEnergyImport",\n\t"BMS_nominalFullPackEnergy",\n\t"BMS_nominalEnergyRemaining"]}'
 )
 
 # ── ComponentsQuery (Powerwall 3 vitals) ────────────────────────────────────

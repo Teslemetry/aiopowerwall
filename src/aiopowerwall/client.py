@@ -50,6 +50,20 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_GATEWAY_HOST: Final = "192.168.91.1"
 
+# setIslandModeRequest mode values used by both PW2 and PW3.
+_ISLAND_MODE_OFF_GRID: Final = 6
+_ISLAND_MODE_ON_GRID: Final = 1
+
+# Wire-format constants for the hand-rolled setIslandMode / triggerIslanding
+# envelopes — see :meth:`PowerwallClient._build_island_envelope`.
+_WT_VARINT: Final = 0
+_WT_LEN: Final = 2
+
+# Field numbers within TEGMessages for islanding commands (verbatim from
+# the Tesla protobuf schema, not present in our checked-in combined.proto).
+_TEG_FIELD_SET_ISLAND_MODE_REQUEST: Final = 3
+_TEG_FIELD_TRIGGER_ISLANDING_REQUEST: Final = 5
+
 _T = TypeVar("_T")
 
 
@@ -127,6 +141,12 @@ class PowerwallClient:
         self._connect_lock = asyncio.Lock()
         self._fast_cache = _TTLCache(cache_status_ttl)
         self._slow_cache = _TTLCache(cache_config_ttl)
+
+        # Pre-curtailment snapshot, captured by ``curtail`` and consumed
+        # by ``restore_from_curtailment``.
+        self._saved_real_mode: str | None = None
+        self._saved_reserve_percent: int | None = None
+        self._curtailment_active = False
 
     # ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -395,6 +415,171 @@ class PowerwallClient:
             populate=lambda req: req.SetInParent(),
             allow_missing_response=True,
         )
+
+    async def set_island_mode(
+        self,
+        *,
+        off_grid: bool,
+        force: bool = True,
+        mode_override: int | None = None,
+    ) -> None:
+        """Send a ``setIslandModeRequest`` to the gateway via local v1r.
+
+        ``mode=6`` requests off-grid (contactor open); ``mode=1`` requests
+        grid reconnect. ``force=True`` is required on off-grid — without it
+        the gateway acknowledges the message but does not operate the
+        contactor.
+
+        .. warning:: The PowerSync project reports that local v1r returns a
+            success response for this command but **does not actuate the
+            contactor** — only the Fleet-API cloud relay path actually
+            islands the gateway. This implementation issues the local
+            command verbatim; verify the contactor state with
+            :meth:`get_status` (``islanding.contactorClosed``) before
+            relying on it. See :meth:`trigger_islanding` for the explicit
+            black-start command.
+
+        Use :meth:`go_off_grid` / :meth:`reconnect_grid` for the
+        higher-level convenience wrappers.
+        """
+        din = await self.connect()
+        mode = (
+            mode_override
+            if mode_override is not None
+            else (_ISLAND_MODE_OFF_GRID if off_grid else _ISLAND_MODE_ON_GRID)
+        )
+
+        teg_payload = self._build_set_island_mode_teg(mode=mode, force=force)
+        envelope_bytes = self._build_command_envelope(din, teg_payload)
+
+        _LOGGER.info(
+            "set_island_mode: mode=%d force=%s din=%s", mode, force, din
+        )
+        inner = await self._transport.post_v1r(envelope_bytes, din)
+        # The response envelope echoes a TEGAPISetIslandModeResponse with
+        # ``result`` (int32) — but our checked-in TEGMessages doesn't model
+        # those fields, so a successful post (no fault) is the strongest
+        # local confirmation available.
+        _LOGGER.debug(
+            "set_island_mode: gateway returned %d bytes (no protobuf parse)",
+            len(inner),
+        )
+
+        # Islanding flips many cached signals; drop them so the next status
+        # read shows the new contactor state.
+        self._fast_cache.invalidate("status")
+        self._fast_cache.invalidate("controller")
+
+    async def go_off_grid(
+        self,
+        *,
+        force: bool = True,
+        mode_override: int | None = None,
+    ) -> None:
+        """Disconnect from the grid (request contactor open) via local v1r.
+
+        Thin wrapper around :meth:`set_island_mode` — see that method's
+        notes about cloud-relay vs local-only command behaviour.
+        """
+        await self.set_island_mode(
+            off_grid=True, force=force, mode_override=mode_override
+        )
+
+    async def reconnect_grid(self) -> None:
+        """Reconnect to the grid (request contactor close) via local v1r."""
+        await self.set_island_mode(off_grid=False, force=False)
+
+    async def trigger_islanding(self) -> None:
+        """Send ``triggerIslandingBlackStartRequest`` via local v1r.
+
+        ``setIslandModeRequest`` only updates the desired mode preference;
+        ``triggerIslandingBlackStartRequest`` is the explicit black-start
+        command that drives the full islanding transition (grid-frequency
+        ramp-down, contactor open, inverter restart in island mode). Try
+        this if :meth:`go_off_grid` does not actually disconnect.
+        """
+        din = await self.connect()
+        teg_payload = self._build_teg_field(
+            _TEG_FIELD_TRIGGER_ISLANDING_REQUEST, b""
+        )
+        envelope_bytes = self._build_command_envelope(din, teg_payload)
+
+        _LOGGER.info("trigger_islanding: din=%s", din)
+        inner = await self._transport.post_v1r(envelope_bytes, din)
+        _LOGGER.debug(
+            "trigger_islanding: gateway returned %d bytes", len(inner)
+        )
+        self._fast_cache.invalidate("status")
+        self._fast_cache.invalidate("controller")
+
+    async def curtail(self, *, reserve_percent: int = 100) -> None:
+        """Stop grid export by switching to ``backup`` mode + high reserve.
+
+        Saves the current ``default_real_mode`` and
+        ``site_info.backup_reserve_percent`` so that
+        :meth:`restore_from_curtailment` can put them back. Uses a config
+        write — no contactor cycling, no solar dropout, but takes ~90s for
+        the gateway to apply the change.
+        """
+        if not 0 <= reserve_percent <= 100:
+            raise ValueError("reserve_percent must be between 0 and 100")
+
+        config = await self.get_config(force=True)
+        self._saved_real_mode = str(
+            config.get("default_real_mode") or "self_consumption"
+        )
+        site_info = config.get("site_info")
+        saved_reserve = (
+            site_info.get("backup_reserve_percent")
+            if isinstance(site_info, Mapping)
+            else None
+        )
+        try:
+            self._saved_reserve_percent = (
+                int(saved_reserve) if saved_reserve is not None else 5
+            )
+        except (TypeError, ValueError):
+            self._saved_reserve_percent = 5
+
+        _LOGGER.info(
+            "curtail: saving mode=%s reserve=%s%% → backup/%s%%",
+            self._saved_real_mode,
+            self._saved_reserve_percent,
+            reserve_percent,
+        )
+        await self.write_config(
+            {
+                "default_real_mode": "backup",
+                "site_info.backup_reserve_percent": reserve_percent,
+            }
+        )
+        self._curtailment_active = True
+
+    async def restore_from_curtailment(self) -> None:
+        """Restore the operation mode + reserve captured by :meth:`curtail`.
+
+        No-op safe to call when curtailment was never engaged — falls back
+        to ``self_consumption`` + 5% if no pre-curtailment state is stored.
+        """
+        mode = self._saved_real_mode or "self_consumption"
+        reserve = (
+            self._saved_reserve_percent
+            if self._saved_reserve_percent is not None
+            else 5
+        )
+        _LOGGER.info("restore: writing mode=%s reserve=%s%%", mode, reserve)
+        await self.write_config(
+            {
+                "default_real_mode": mode,
+                "site_info.backup_reserve_percent": reserve,
+            }
+        )
+        self._curtailment_active = False
+
+    @property
+    def curtailment_active(self) -> bool:
+        """True between :meth:`curtail` and :meth:`restore_from_curtailment`."""
+        return self._curtailment_active
 
     async def get_backup_events(self) -> BackupEventsPayload:
         """Return the active manual backup and any scheduled backup events."""
@@ -698,6 +883,74 @@ class PowerwallClient:
                 f"TEG response missing {response_field}"
             )
         return response
+
+    # ── Internals: hand-rolled wire encoders for islanding commands ─────────
+    #
+    # ``setIslandModeRequest`` and ``triggerIslandingBlackStartRequest`` live
+    # at ``TEGMessages`` fields 3 and 5 in Tesla's schema — neither is
+    # declared in our checked-in ``tedapi_combined.proto`` (which only models
+    # the backup-event oneof at fields 45-50). Rather than regenerate the pb2
+    # module, we emit raw protobuf wire bytes for the islanding payload and
+    # let combined_pb2 handle the outer signing wrapper.
+
+    @staticmethod
+    def _varint(value: int) -> bytes:
+        out = bytearray()
+        while value >= 0x80:
+            out.append((value & 0x7F) | 0x80)
+            value >>= 7
+        out.append(value & 0x7F)
+        return bytes(out)
+
+    @classmethod
+    def _wire_field(cls, field_num: int, wire: int, body: bytes) -> bytes:
+        return cls._varint((field_num << 3) | wire) + body
+
+    @classmethod
+    def _field_varint(cls, field_num: int, value: int) -> bytes:
+        return cls._wire_field(field_num, _WT_VARINT, cls._varint(value))
+
+    @classmethod
+    def _field_bytes(cls, field_num: int, value: bytes) -> bytes:
+        return cls._wire_field(
+            field_num, _WT_LEN, cls._varint(len(value)) + value
+        )
+
+    @classmethod
+    def _field_string(cls, field_num: int, value: str) -> bytes:
+        return cls._field_bytes(field_num, value.encode("utf-8"))
+
+    @classmethod
+    def _build_teg_field(cls, field_num: int, inner: bytes) -> bytes:
+        """Encode TEGMessages with a single length-delimited submessage."""
+        return cls._field_bytes(field_num, inner)
+
+    @classmethod
+    def _build_set_island_mode_teg(cls, *, mode: int, force: bool) -> bytes:
+        """Encode TEGMessages.setIslandModeRequest{mode, force} bytes."""
+        req = cls._field_varint(1, mode) + cls._field_varint(2, 1 if force else 0)
+        return cls._build_teg_field(_TEG_FIELD_SET_ISLAND_MODE_REQUEST, req)
+
+    @classmethod
+    def _build_command_envelope(cls, din: str, teg_payload: bytes) -> bytes:
+        """Encode a MessageEnvelope carrying ``teg_payload`` as the oneof.
+
+        Mirrors the layout we'd otherwise build with
+        ``combined_pb2.MessageEnvelope`` — ``deliveryChannel=HERMES_COMMAND``,
+        ``sender.authorizedClient=CUSTOMER_MOBILE_APP``,
+        ``recipient.din=<din>`` — except the ``teg`` payload is supplied as
+        raw bytes since our pb2 doesn't model the islanding fields.
+        """
+        # Participant.sender — oneof id, field 4 = authorizedClient (varint).
+        sender = cls._field_varint(4, 1)
+        # Participant.recipient — oneof id, field 1 = din (string).
+        recipient = cls._field_string(1, din)
+        return (
+            cls._field_varint(1, 2)  # deliveryChannel = HERMES_COMMAND
+            + cls._field_bytes(2, sender)
+            + cls._field_bytes(3, recipient)
+            + cls._field_bytes(5, teg_payload)  # MessageEnvelope.teg
+        )
 
     @staticmethod
     def _apply_dotted_update(
