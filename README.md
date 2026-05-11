@@ -32,7 +32,7 @@ pip install aiopowerwall
 ```python
 import asyncio
 from pathlib import Path
-from aiopowerwall import PowerwallClient
+from aiopowerwall import PowerwallClient, current_power
 
 async def main() -> None:
     pem = Path("tedapi_rsa_private.pem").read_bytes()
@@ -45,12 +45,17 @@ async def main() -> None:
         print("DIN:", pw.din)
         print("Battery SoC:", await pw.get_battery_soe(), "%")
         print("Grid:", await pw.get_grid_status())
-        print("Power:", await pw.current_power())
+        status = await pw.get_status()
+        print("Power:", current_power(status))
 
 asyncio.run(main())
 ```
 
 ## API surface
+
+Every method issues a fresh request — the library does not cache responses.
+If you need a value derived from a payload, fetch the payload once and pass
+it to the pure helper functions.
 
 | Method | Returns |
 | --- | --- |
@@ -60,20 +65,22 @@ asyncio.run(main())
 | `get_status()` | DeviceController query (narrow) |
 | `get_device_controller()` | DeviceController query (extended) |
 | `get_components()` | Powerwall 3 component data |
-| `get_firmware_version(details=...)` | Version string or details dict |
+| `get_firmware_details()` | Firmware details dict |
 | `get_meters_aggregates()` | `/api/meters/aggregates` |
 | `get_battery_soe()` | Battery SoC percentage |
 | `get_grid_status()` | Grid status string |
-| `battery_level()` | SoC computed from status payload |
-| `current_power(location=...)` | Real power per meter aggregate |
-| `backup_time_remaining()` | Hours of backup at current load |
 | `write_config(updates)` | Patch `config.json` (dotted paths) |
 | `schedule_max_backup(seconds)` | Schedule manual backup event |
 | `cancel_max_backup()` | Cancel manual backup event |
 | `get_backup_events()` | Active and scheduled backup events |
 
-All read methods cache responses with a configurable TTL
-(`cache_status_ttl`, `cache_config_ttl`); pass `force=True` to refresh.
+Pure helpers (operate on an already-fetched status payload):
+
+| Function | Returns |
+| --- | --- |
+| `battery_level(status)` | SoC percentage computed from status |
+| `current_power(status)` | `{location: realPowerW}` map |
+| `backup_time_remaining(status)` | Hours of backup at current load |
 
 ## Exceptions
 

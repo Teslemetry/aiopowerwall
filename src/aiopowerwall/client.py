@@ -2,7 +2,7 @@
 
 Typical use::
 
-    from aiopowerwall import PowerwallClient
+    from aiopowerwall import PowerwallClient, battery_level
 
     async with PowerwallClient(
         host="192.168.91.1",
@@ -10,8 +10,11 @@ Typical use::
         rsa_private_key_pem=pem_bytes,
     ) as client:
         await client.connect()
-        soc = await client.battery_level()
         status = await client.get_status()
+        soc = battery_level(status)
+
+Every method on :class:`PowerwallClient` issues a fresh gateway request —
+the library does not cache responses or coalesce concurrent calls.
 """
 
 from __future__ import annotations
@@ -20,9 +23,9 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from types import TracebackType
-from typing import Any, Final, TypeVar, cast
+from typing import Any, Final, cast
 
 import aiohttp
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -40,7 +43,6 @@ from .models import (
     ControllerPayload,
     FirmwareDetails,
     ManualBackupInfo,
-    PowerLocation,
     StatusPayload,
 )
 from .proto import combined_pb2, tedapi_pb2
@@ -64,42 +66,6 @@ _WT_LEN: Final = 2
 _TEG_FIELD_SET_ISLAND_MODE_REQUEST: Final = 3
 _TEG_FIELD_TRIGGER_ISLANDING_REQUEST: Final = 5
 
-_T = TypeVar("_T")
-
-
-class _TTLCache:
-    """Tiny per-key TTL cache with an asyncio lock to coalesce concurrent loads."""
-
-    __slots__ = ("_data", "_locks", "_ttl")
-
-    def __init__(self, ttl: float) -> None:
-        self._ttl = ttl
-        self._data: dict[str, tuple[float, Any]] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
-
-    def get(self, key: str) -> Any | None:
-        entry = self._data.get(key)
-        if entry is None:
-            return None
-        ts, value = entry
-        if (time.monotonic() - ts) >= self._ttl:
-            return None
-        return value
-
-    def set(self, key: str, value: Any) -> None:
-        self._data[key] = (time.monotonic(), value)
-
-    def invalidate(self, key: str) -> None:
-        self._data.pop(key, None)
-
-    def lock(self, key: str) -> asyncio.Lock:
-        lock = self._locks.get(key)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._locks[key] = lock
-        return lock
-
-
 def _lookup(data: Any, *keys: str) -> Any:
     """Walk a nested mapping; return None if any key is missing."""
     for key in keys:
@@ -112,9 +78,9 @@ def _lookup(data: Any, *keys: str) -> Any:
 class PowerwallClient:
     """Async client for a Powerwall 3 gateway over `/tedapi/v1r`.
 
-    The client is reentrant — concurrent calls to the same getter are
-    coalesced through the TTL cache, and writes invalidate the relevant
-    cache entries.
+    Every method issues a fresh gateway request — there is no response
+    cache and no request coalescing. Callers that want freshness control
+    or de-duplication should layer it on top.
     """
 
     def __init__(
@@ -125,8 +91,6 @@ class PowerwallClient:
         rsa_private_key_pem: bytes,
         session: aiohttp.ClientSession | None = None,
         timeout: float = 5.0,
-        cache_status_ttl: float = 5.0,
-        cache_config_ttl: float = 30.0,
     ) -> None:
         self._owns_session = session is None
         self._session = session or aiohttp.ClientSession()
@@ -139,8 +103,6 @@ class PowerwallClient:
         )
         self._din: str | None = None
         self._connect_lock = asyncio.Lock()
-        self._fast_cache = _TTLCache(cache_status_ttl)
-        self._slow_cache = _TTLCache(cache_config_ttl)
 
         # Pre-curtailment snapshot, captured by ``curtail`` and consumed
         # by ``restore_from_curtailment``.
@@ -227,92 +189,25 @@ class PowerwallClient:
         """Return the cached DIN; calls :meth:`connect` if not yet known."""
         return await self.connect()
 
-    async def get_config(self, *, force: bool = False) -> ConfigPayload:
+    async def get_config(self) -> ConfigPayload:
         """Return the gateway configuration (`config.json`)."""
-        return await self._cached(
-            self._slow_cache, "config", force, self._fetch_config
-        )
+        return await self._fetch_config()
 
-    async def get_status(self, *, force: bool = False) -> StatusPayload:
+    async def get_status(self) -> StatusPayload:
         """Return the gateway status (DeviceControllerQuery, narrow form)."""
-        return await self._cached(
-            self._fast_cache, "status", force, self._fetch_status
-        )
+        return await self._fetch_status()
 
-    async def get_device_controller(
-        self, *, force: bool = False
-    ) -> ControllerPayload:
+    async def get_device_controller(self) -> ControllerPayload:
         """Return the extended DeviceControllerQuery payload (controller view)."""
-        return await self._cached(
-            self._fast_cache, "controller", force, self._fetch_controller
-        )
+        return await self._fetch_controller()
 
-    async def get_components(self, *, force: bool = False) -> ComponentsPayload:
+    async def get_components(self) -> ComponentsPayload:
         """Return Powerwall 3 device component data (PCH, BMS, HVP, …)."""
-        return await self._cached(
-            self._slow_cache, "components", force, self._fetch_components
-        )
+        return await self._fetch_components()
 
-    async def get_firmware_version(
-        self, *, details: bool = False, force: bool = False
-    ) -> str | FirmwareDetails:
-        """Return the gateway firmware version string, or a details dict."""
-        cache_key = "firmware_details" if details else "firmware"
-        cache = self._slow_cache
-
-        async def _fetch() -> str | FirmwareDetails:
-            return await self._fetch_firmware(details=details)
-
-        return await self._cached(cache, cache_key, force, _fetch)
-
-    # ── Convenience helpers (read-only) ─────────────────────────────────────
-
-    async def battery_level(self, *, force: bool = False) -> float | None:
-        """Battery state-of-charge as a percentage (0-100), or None if unknown.
-
-        Computed from `nominalEnergyRemainingWh / nominalFullPackEnergyWh`
-        in the cached status payload — for a directly-reported SoC, see
-        :meth:`get_battery_soe`.
-        """
-        status = await self.get_status(force=force)
-        remaining = _lookup(
-            status, "control", "systemStatus", "nominalEnergyRemainingWh"
-        )
-        full = _lookup(status, "control", "systemStatus", "nominalFullPackEnergyWh")
-        if not remaining or not full:
-            return None
-        return float(remaining) / float(full) * 100
-
-    async def current_power(
-        self,
-        location: PowerLocation | str | None = None,
-        *,
-        force: bool = False,
-    ) -> float | dict[str, float | None] | None:
-        """Return real power for a meter location, or all locations if None."""
-        status = await self.get_status(force=force)
-        meters = _lookup(status, "control", "meterAggregates")
-        if not isinstance(meters, list):
-            return None
-        power_map: dict[str, float | None] = {
-            str(m.get("location", "")).upper(): m.get("realPowerW")
-            for m in meters
-            if isinstance(m, Mapping) and m.get("location") is not None
-        }
-        if location is None:
-            return power_map
-        return power_map.get(str(location).upper())
-
-    async def backup_time_remaining(self, *, force: bool = False) -> float | None:
-        """Estimated backup runtime in hours at current load, or None if unknown."""
-        status = await self.get_status(force=force)
-        remaining = _lookup(
-            status, "control", "systemStatus", "nominalEnergyRemainingWh"
-        )
-        load = await self.current_power("LOAD", force=force)
-        if not remaining or not isinstance(load, (int, float)) or load <= 0:
-            return None
-        return float(remaining) / float(load)
+    async def get_firmware_details(self) -> FirmwareDetails:
+        """Return the gateway firmware details (version, hashes, hardware)."""
+        return await self._fetch_firmware()
 
     # ── TEDAPI v1r writes / commands ────────────────────────────────────────
 
@@ -370,9 +265,6 @@ class PowerwallClient:
             raise PowerwallProtocolError(
                 "updateFile response missing filestore payload"
             )
-
-        # Successful write — invalidate any cached views of config.
-        self._slow_cache.invalidate("config")
 
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
         """Schedule a manual "max backup" event (reserve set to 100%)."""
@@ -465,11 +357,6 @@ class PowerwallClient:
             len(inner),
         )
 
-        # Islanding flips many cached signals; drop them so the next status
-        # read shows the new contactor state.
-        self._fast_cache.invalidate("status")
-        self._fast_cache.invalidate("controller")
-
     async def go_off_grid(
         self,
         *,
@@ -509,8 +396,6 @@ class PowerwallClient:
         _LOGGER.debug(
             "trigger_islanding: gateway returned %d bytes", len(inner)
         )
-        self._fast_cache.invalidate("status")
-        self._fast_cache.invalidate("controller")
 
     async def curtail(self, *, reserve_percent: int = 100) -> None:
         """Stop grid export by switching to ``backup`` mode + high reserve.
@@ -524,7 +409,7 @@ class PowerwallClient:
         if not 0 <= reserve_percent <= 100:
             raise ValueError("reserve_percent must be between 0 and 100")
 
-        config = await self.get_config(force=True)
+        config = await self.get_config()
         self._saved_real_mode = str(
             config.get("default_real_mode") or "self_consumption"
         )
@@ -617,28 +502,6 @@ class PowerwallClient:
 
         return {"manual_backup": manual, "backup_events": scheduled}
 
-    # ── Internals: caching ──────────────────────────────────────────────────
-
-    async def _cached(
-        self,
-        cache: _TTLCache,
-        key: str,
-        force: bool,
-        loader: Callable[[], Awaitable[_T]],
-    ) -> _T:
-        if not force:
-            cached = cache.get(key)
-            if cached is not None:
-                return cast(_T, cached)
-        async with cache.lock(key):
-            if not force:
-                cached = cache.get(key)
-                if cached is not None:
-                    return cast(_T, cached)
-            value = await loader()
-            cache.set(key, value)
-            return value
-
     # ── Internals: query builders ───────────────────────────────────────────
 
     async def _query_graphql(
@@ -726,9 +589,7 @@ class PowerwallClient:
         data.setdefault("battery_blocks", [])
         return data
 
-    async def _fetch_firmware(
-        self, *, details: bool
-    ) -> str | FirmwareDetails:
+    async def _fetch_firmware(self) -> FirmwareDetails:
         din = await self.connect()
         msg = tedapi_pb2.Message()
         envelope = msg.message
@@ -751,9 +612,6 @@ class PowerwallClient:
                 f"Malformed firmware response: {err}"
             ) from err
 
-        version: str = response.firmware.system.version.text
-        if not details:
-            return version
         return {
             "system": {
                 "gateway": {
@@ -967,7 +825,52 @@ class PowerwallClient:
         target[keys[-1]] = value
 
 
+def battery_level(status: StatusPayload) -> float | None:
+    """Battery state-of-charge as a percentage (0-100), or None if unknown.
+
+    Computed from ``nominalEnergyRemainingWh / nominalFullPackEnergyWh``
+    in a status payload returned by :meth:`PowerwallClient.get_status`.
+    """
+    remaining = _lookup(
+        status, "control", "systemStatus", "nominalEnergyRemainingWh"
+    )
+    full = _lookup(status, "control", "systemStatus", "nominalFullPackEnergyWh")
+    if not remaining or not full:
+        return None
+    return float(remaining) / float(full) * 100
+
+
+def current_power(status: StatusPayload) -> dict[str, float | None]:
+    """Return the real-power map (location → watts) from a status payload.
+
+    Locations are upper-cased meter names (``LOAD``, ``SITE``, ``SOLAR``,
+    ``BATTERY``). Missing or malformed meter aggregates yield an empty dict.
+    """
+    meters = _lookup(status, "control", "meterAggregates")
+    if not isinstance(meters, list):
+        return {}
+    return {
+        str(m.get("location", "")).upper(): m.get("realPowerW")
+        for m in meters
+        if isinstance(m, Mapping) and m.get("location") is not None
+    }
+
+
+def backup_time_remaining(status: StatusPayload) -> float | None:
+    """Estimated backup runtime in hours at current load, or None if unknown."""
+    remaining = _lookup(
+        status, "control", "systemStatus", "nominalEnergyRemainingWh"
+    )
+    load = current_power(status).get("LOAD")
+    if not remaining or not isinstance(load, (int, float)) or load <= 0:
+        return None
+    return float(remaining) / float(load)
+
+
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
     "PowerwallClient",
+    "backup_time_remaining",
+    "battery_level",
+    "current_power",
 ]

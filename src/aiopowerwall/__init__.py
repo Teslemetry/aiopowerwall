@@ -10,7 +10,13 @@ an already-paired private key.
 
 from __future__ import annotations
 
-from .client import DEFAULT_GATEWAY_HOST, PowerwallClient
+from .client import (
+    DEFAULT_GATEWAY_HOST,
+    PowerwallClient,
+    backup_time_remaining,
+    battery_level,
+    current_power,
+)
 from .exceptions import (
     PowerwallAuthenticationError,
     PowerwallConnectionError,
@@ -52,4 +58,7 @@ __all__ = [
     "PowerwallRateLimitError",
     "StatusPayload",
     "__version__",
+    "backup_time_remaining",
+    "battery_level",
+    "current_power",
 ]

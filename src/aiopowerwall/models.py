@@ -17,7 +17,7 @@ PowerLocation = Literal[
 
 
 class FirmwareDetails(TypedDict, total=False):
-    """Detailed firmware payload returned by `get_firmware_version(details=True)`."""
+    """Detailed firmware payload returned by `get_firmware_details()`."""
 
     system: dict[str, Any]
 
