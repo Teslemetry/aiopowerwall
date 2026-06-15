@@ -15,7 +15,8 @@ scoped to:
 
 - Powerwall 3, and updated Powerwall 2 (untested)
 - Local LAN access only (no cloud telemetry)
-- Read + control commands (status, config, firmware, components, max-backup)
+- Read + control commands (status, config, firmware, components,
+  max-backup, islanding, curtailment)
 
 The RSA key pair used for v1r authentication must be **registered with the
 gateway out-of-band**, typically via the Tesla Fleet API. This library
@@ -51,16 +52,33 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-## API surface
+## No caching, no coalescing
 
-Every method issues a fresh request — the library does not cache responses.
-If you need a value derived from a payload, fetch the payload once and pass
-it to the pure helper functions.
+**Every method on `PowerwallClient` issues a fresh request to the gateway.**
+The library does not cache responses, deduplicate concurrent calls, or
+batch reads — the only state it holds across calls is the v1r session
+(login + DIN, established once by `connect()`).
+
+This keeps the library predictable but means callers are responsible for
+freshness control:
+
+- If you need several values from the same payload, fetch the payload
+  once and pass it to the pure helper functions (see below) rather than
+  calling multiple `get_*` methods.
+- If you poll on a fixed interval, do the polling in your own code; the
+  client will not throttle you.
+- If two coroutines call the same `get_*` method concurrently, the
+  gateway sees two requests.
+
+`connect()` is the single exception: it is idempotent and lock-protected,
+so concurrent callers share one login.
+
+## API surface
 
 | Method | Returns |
 | --- | --- |
-| `connect()` | DIN string |
-| `get_din()` | DIN string |
+| `connect()` | DIN string (idempotent; required before other calls) |
+| `get_din()` | DIN string (calls `connect()` if needed) |
 | `get_config()` | `config.json` (dict) |
 | `get_status()` | DeviceController query (narrow) |
 | `get_device_controller()` | DeviceController query (extended) |
@@ -69,12 +87,35 @@ it to the pure helper functions.
 | `get_meters_aggregates()` | `/api/meters/aggregates` |
 | `get_battery_soe()` | Battery SoC percentage |
 | `get_grid_status()` | Grid status string |
-| `write_config(updates)` | Patch `config.json` (dotted paths) |
-| `schedule_max_backup(seconds)` | Schedule manual backup event |
-| `cancel_max_backup()` | Cancel manual backup event |
 | `get_backup_events()` | Active and scheduled backup events |
 
-Pure helpers (operate on an already-fetched status payload):
+### Writes and commands
+
+| Method | Effect |
+| --- | --- |
+| `write_config(updates)` | Patch `config.json` (dotted-path mapping) |
+| `schedule_max_backup(seconds)` | Schedule a manual max-backup event |
+| `cancel_max_backup()` | Cancel the active manual backup event |
+| `set_island_mode(off_grid=, force=, …)` | Send `setIslandModeRequest` |
+| `go_off_grid(force=True)` | Convenience wrapper around `set_island_mode` |
+| `reconnect_grid()` | Convenience wrapper around `set_island_mode` |
+| `trigger_islanding()` | Send `triggerIslandingBlackStartRequest` |
+| `curtail(reserve_percent=100)` | Stop export via `backup` mode + reserve |
+| `restore_from_curtailment()` | Restore mode + reserve captured by `curtail` |
+| `curtailment_active` (property) | True between `curtail` and `restore_from_curtailment` |
+
+> **Islanding caveat.** `set_island_mode` / `go_off_grid` post a local v1r
+> command that the gateway acknowledges but, on some firmwares, does not
+> actually act on — only the Fleet-API cloud relay path is known to
+> operate the contactor. Verify with `get_status()`
+> (`islanding.contactorClosed`) before relying on it. `trigger_islanding`
+> issues the explicit black-start command if the mode-only request is a
+> no-op on your gateway.
+
+### Pure helpers
+
+These operate on an already-fetched status payload — fetch once with
+`get_status()`, then call as many helpers as you need.
 
 | Function | Returns |
 | --- | --- |
