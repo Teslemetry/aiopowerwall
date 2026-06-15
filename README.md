@@ -22,6 +22,18 @@ The RSA key pair used for v1r authentication must be **registered with the
 gateway out-of-band**, typically via the Tesla Fleet API. This library
 consumes an already-paired private key — it does not implement registration.
 
+### Multi-Powerwall systems
+
+This client maintains a single v1r connection to the **leader** gateway and
+signs every request with the leader's DIN — which is correct, since the RSA
+key is only registered on the leader. On a multi-unit system the leader
+returns whole-site aggregate data, but **per-follower** vitals are not
+available over v1r: the leader ignores the `recipient.din` of a per-device
+query and echoes its own data, so iterating over followers would yield
+duplicates rather than per-unit readings. Reading individual follower units
+requires a separate WiFi-side TEDAPI connection to `192.168.91.1`, which this
+library does not implement.
+
 ## Install
 
 ```bash

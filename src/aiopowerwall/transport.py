@@ -17,6 +17,7 @@ import asyncio
 import gzip
 import logging
 import math
+import re
 import struct
 import time
 import uuid
@@ -52,6 +53,14 @@ _DOMAIN_ENERGY_DEVICE: Final = 7
 _SIGNATURE_TTL_SECONDS: Final = 12
 
 _RATE_LIMIT_STATUSES: Final = frozenset({429, 503})
+
+# The gateway signals a rejected/unverified RSA key by returning HTTP 200 with
+# a placeholder string in place of a real payload. The exact wording and casing
+# vary across firmware ("v1r: client authorization not verified",
+# "Client authorization not verified", …), so match the stable core phrase
+# case-insensitively. `re.search` on the raw bytes avoids allocating a
+# lowercased copy of large (~100 KB) success payloads on every call.
+_AUTH_NOT_VERIFIED_RE: Final = re.compile(rb"authorization not verified", re.IGNORECASE)
 
 
 def _decompress(content: bytes) -> bytes:
@@ -209,10 +218,11 @@ class V1rTransport:
         inner: bytes = response.protobuf_message_as_bytes
         # The gateway signals a rejected RSA signature by returning HTTP 200
         # with no MESSAGEFAULT and a MessageEnvelope whose `common.placeholder`
-        # carries the literal "v1r: client authorization not verified". Detect
-        # it centrally so callers see a clear auth error instead of every
-        # downstream parser failing with "missing payload".
-        if b"v1r: client authorization not verified" in inner:
+        # carries an "authorization not verified" string. Detect it centrally
+        # so callers see a clear auth error instead of every downstream parser
+        # failing with "missing payload". The exact prefix/casing varies across
+        # firmware, so match the core phrase case-insensitively.
+        if _AUTH_NOT_VERIFIED_RE.search(inner):
             raise PowerwallAuthenticationError(
                 "v1r: client authorization not verified — the RSA key is not "
                 "paired with this Powerwall. Register the matching public key "
