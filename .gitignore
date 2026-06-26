@@ -23,4 +23,6 @@ htmlcov/
 # Local testing — paired RSA key + ad-hoc scripts must never be committed
 *.pem
 test.py
+command_test.py
+sampledata.txt
 *.log
