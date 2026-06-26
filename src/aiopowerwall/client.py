@@ -65,13 +65,13 @@ _RESERVE_SCALE: Final = 0.95
 _RESERVE_OFFSET: Final = 5.0
 
 # State-of-charge is reported locally on the raw physical pack scale
-# (``get_battery_soe`` / ``battery_level_raw``), but the Tesla app and Fleet API
-# (``live_status.percentage_charged``) show a user-facing value with the same
-# inaccessible bottom-5% buffer removed as backup reserve — i.e. the identical
-# transform ``raw = scaled * 0.95 + 5``. Kept as separate constants (rather
-# than reusing the reserve ones) because the two were verified independently
-# and are conceptually distinct settings. Verified on PW3: local
-# ``get_battery_soe`` 52.7778 == Fleet ``percentage_charged`` 50.2924.
+# (``get_battery_soe_raw`` / ``battery_level_raw``), but the Tesla app and
+# Fleet API (``live_status.percentage_charged``) show a user-facing value with
+# the same inaccessible bottom-5% buffer removed as backup reserve — i.e. the
+# identical transform ``raw = scaled * 0.95 + 5``. Kept as separate constants
+# (rather than reusing the reserve ones) because the two were verified
+# independently and are conceptually distinct settings. Verified on PW3: local
+# raw 52.7778 == Fleet ``percentage_charged`` 50.2924.
 _SOC_SCALE: Final = 0.95
 _SOC_OFFSET: Final = 5.0
 
@@ -182,8 +182,14 @@ class PowerwallClient:
             )
         return cast(dict[str, Any], data)
 
-    async def get_battery_soe(self) -> float:
-        """Return battery state-of-charge percentage (0-100)."""
+    async def get_battery_soe_raw(self) -> float:
+        """Return the **raw** physical state-of-charge percentage (0-100).
+
+        This is ``/api/system_status/soe`` verbatim — the gateway's raw value
+        in which the bottom 5% is an inaccessible buffer, so it reads higher
+        than the Tesla app and Fleet API. Use :meth:`get_battery_soe` for the
+        user-facing value.
+        """
         await self.connect()
         data = await self._transport.api_get("/api/system_status/soe")
         if not isinstance(data, Mapping) or "percentage" not in data:
@@ -192,15 +198,16 @@ class PowerwallClient:
             )
         return float(data["percentage"])
 
-    async def get_battery_soe_scaled(self) -> float:
+    async def get_battery_soe(self) -> float:
         """Return the **user-facing** state-of-charge percentage (0-100).
 
-        :meth:`get_battery_soe` returns the gateway's raw physical value
+        Matches what the Tesla app and Fleet API
+        (`live_status.percentage_charged`) display.
+        :meth:`get_battery_soe_raw` returns the gateway's raw physical value
         (bottom 5% is an inaccessible buffer); this applies
-        :func:`raw_to_scaled_soc` to match what the Tesla app and Fleet API
-        (`live_status.percentage_charged`) display — raw 5% maps to 0%.
+        :func:`raw_to_scaled_soc` to it — raw 5% maps to 0%.
         """
-        return raw_to_scaled_soc(await self.get_battery_soe())
+        return raw_to_scaled_soc(await self.get_battery_soe_raw())
 
     async def get_grid_status(self) -> str:
         """Return the gateway grid status string (e.g. ``SystemGridConnected``)."""
@@ -919,8 +926,8 @@ def raw_to_scaled_soc(raw_percent: float) -> float:
 
     Inverse of :func:`scaled_to_raw_soc`: ``scaled = (raw - 5) / 0.95``. A raw
     value of 5 maps to user-facing 0%. This is the transform that turns the
-    local ``get_battery_soe`` / ``battery_level_raw`` reading into the figure
-    the Tesla app and Fleet API (`live_status.percentage_charged`) display.
+    local ``get_battery_soe_raw`` / ``battery_level_raw`` reading into the
+    figure the Tesla app and Fleet API (`live_status.percentage_charged`) show.
     """
     return round((raw_percent - _SOC_OFFSET) / _SOC_SCALE, 4)
 

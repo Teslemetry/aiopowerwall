@@ -1,11 +1,11 @@
 """Unit tests for SoC raw<->scaled conversion and the scaled readers.
 
 The local gateway reports state-of-charge on the raw physical pack scale
-(``get_battery_soe`` and ``battery_level_raw``); the Tesla app / Fleet API show a
-user-facing value with the bottom-5% buffer removed — the *same* buffer as
-backup reserve, so ``raw = scaled * 0.95 + 5``.
+(``get_battery_soe_raw`` and ``battery_level_raw``); the Tesla app / Fleet API
+show a user-facing value with the bottom-5% buffer removed — the *same* buffer
+as backup reserve, so ``raw = scaled * 0.95 + 5``.
 
-Verified on a Powerwall 3 (2026-06-26): local ``get_battery_soe`` 52.7778
+Verified on a Powerwall 3 (2026-06-26): local raw 52.7778
 mapped exactly to Fleet ``live_status.percentage_charged`` 50.2924
 (= ``(52.7778 - 5) / 0.95``), matching to full float precision.
 """
@@ -84,21 +84,21 @@ def test_battery_level_returns_none_when_unknown() -> None:
 
 @pytest.fixture
 def client() -> PowerwallClient:
-    """A bare client (no transport) with ``get_battery_soe`` stubbed.
+    """A bare client (no transport) with ``get_battery_soe_raw`` stubbed.
 
-    ``get_battery_soe_scaled`` only calls ``self.get_battery_soe``, so we skip
+    ``get_battery_soe`` only calls ``self.get_battery_soe_raw``, so we skip
     ``__init__`` (which would load an RSA key) and stub that one method.
     """
     pw = PowerwallClient.__new__(PowerwallClient)
 
-    async def fake_get_battery_soe() -> float:
+    async def fake_get_battery_soe_raw() -> float:
         return 52.77777777777778
 
-    pw.get_battery_soe = fake_get_battery_soe  # type: ignore[method-assign]
+    pw.get_battery_soe_raw = fake_get_battery_soe_raw  # type: ignore[method-assign]
     return pw
 
 
-async def test_get_battery_soe_scaled_returns_user_facing(
+async def test_get_battery_soe_returns_user_facing(
     client: PowerwallClient,
 ) -> None:
-    assert await client.get_battery_soe_scaled() == pytest.approx(50.2924)
+    assert await client.get_battery_soe() == pytest.approx(50.2924)

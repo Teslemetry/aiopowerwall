@@ -97,8 +97,8 @@ so concurrent callers share one login.
 | `get_components()` | Powerwall 3 component data |
 | `get_firmware_details()` | Firmware details dict |
 | `get_meters_aggregates()` | `/api/meters/aggregates` |
-| `get_battery_soe()` | Battery SoC percentage (**raw** physical scale) |
-| `get_battery_soe_scaled()` | Battery SoC on the **user-facing** scale (Tesla app / Fleet API) |
+| `get_battery_soe()` | Battery SoC on the **user-facing** scale (Tesla app / Fleet API) |
+| `get_battery_soe_raw()` | Battery SoC percentage (**raw** physical scale) |
 | `get_grid_status()` | Grid status string |
 | `get_backup_events()` | Active and scheduled backup events |
 
@@ -140,12 +140,10 @@ so concurrent callers share one login.
 > the Tesla app and Fleet API (`live_status.percentage_charged`) show. The
 > gateway reports SoC locally on a *raw* physical scale that includes the
 > bottom-5% buffer and so reads higher; `battery_level_raw(status)` and the
-> `/api/system_status/soe` reader `get_battery_soe()` expose that raw value.
-> The transform is identical to reserve: `scaled = (raw - 5) / 0.95`
-> (verified on PW3: local raw 52.78% == Fleet 50.29%). Use
-> `get_battery_soe_scaled()` for the user-facing value off the soe endpoint,
-> or the `scaled_to_raw_soc` / `raw_to_scaled_soc` helpers to convert
-> explicitly.
+> `/api/system_status/soe` reader `get_battery_soe_raw()` expose that raw
+> value. The transform is identical to reserve: `scaled = (raw - 5) / 0.95`
+> (verified on PW3: local raw 52.78% == Fleet 50.29%). Use the
+> `scaled_to_raw_soc` / `raw_to_scaled_soc` helpers to convert explicitly.
 
 ### Pure helpers
 
