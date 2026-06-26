@@ -1,7 +1,7 @@
 """Unit tests for SoC raw<->scaled conversion and the scaled readers.
 
 The local gateway reports state-of-charge on the raw physical pack scale
-(``get_battery_soe`` and ``battery_level``); the Tesla app / Fleet API show a
+(``get_battery_soe`` and ``battery_level_raw``); the Tesla app / Fleet API show a
 user-facing value with the bottom-5% buffer removed — the *same* buffer as
 backup reserve, so ``raw = scaled * 0.95 + 5``.
 
@@ -16,7 +16,8 @@ import pytest
 
 from aiopowerwall import (
     PowerwallClient,
-    battery_level_scaled,
+    battery_level,
+    battery_level_raw,
     raw_to_scaled_soc,
     scaled_to_raw_soc,
 )
@@ -59,8 +60,8 @@ def test_scaled_to_raw_rejects_out_of_range(bad: float) -> None:
         scaled_to_raw_soc(bad)
 
 
-def test_battery_level_scaled_applies_transform() -> None:
-    # remaining/full = 9500/18000 -> raw 52.7778 -> scaled 50.2924.
+def test_battery_level_applies_transform() -> None:
+    # remaining/full = 9500/18000 -> raw 52.7778 -> user-facing 50.2924.
     status = {
         "control": {
             "systemStatus": {
@@ -69,12 +70,14 @@ def test_battery_level_scaled_applies_transform() -> None:
             }
         }
     }
-    assert battery_level_scaled(status) == pytest.approx(50.2924)
+    assert battery_level_raw(status) == pytest.approx(52.77777777777778)
+    assert battery_level(status) == pytest.approx(50.2924)
 
 
-def test_battery_level_scaled_returns_none_when_unknown() -> None:
-    assert battery_level_scaled({}) is None
-    assert battery_level_scaled(
+def test_battery_level_returns_none_when_unknown() -> None:
+    assert battery_level({}) is None
+    assert battery_level_raw({}) is None
+    assert battery_level(
         {"control": {"systemStatus": {"nominalFullPackEnergyWh": 0}}}
     ) is None
 
