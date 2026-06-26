@@ -97,7 +97,8 @@ so concurrent callers share one login.
 | `get_components()` | Powerwall 3 component data |
 | `get_firmware_details()` | Firmware details dict |
 | `get_meters_aggregates()` | `/api/meters/aggregates` |
-| `get_battery_soe()` | Battery SoC percentage |
+| `get_battery_soe()` | Battery SoC percentage (**raw** physical scale) |
+| `get_battery_soe_scaled()` | Battery SoC on the **user-facing** scale (Tesla app / Fleet API) |
 | `get_grid_status()` | Grid status string |
 | `get_backup_events()` | Active and scheduled backup events |
 
@@ -135,6 +136,15 @@ so concurrent callers share one login.
 > `scaled_to_raw_reserve` / `raw_to_scaled_reserve` helpers to convert
 > explicitly.
 
+> **SoC scaling.** Battery state-of-charge is reported locally on the same
+> *raw* physical scale — `get_battery_soe()` and `battery_level(status)`
+> include the bottom-5% buffer, so they read higher than the Tesla app and
+> Fleet API (`live_status.percentage_charged`). The transform is identical to
+> reserve: `scaled = (raw - 5) / 0.95` (verified on PW3: local 52.78% ==
+> Fleet 50.29%). Use `get_battery_soe_scaled()` / `battery_level_scaled()`
+> for the user-facing value, or the `scaled_to_raw_soc` / `raw_to_scaled_soc`
+> helpers to convert explicitly.
+
 ### Pure helpers
 
 These operate on an already-fetched status payload — fetch once with
@@ -142,11 +152,14 @@ These operate on an already-fetched status payload — fetch once with
 
 | Function | Returns |
 | --- | --- |
-| `battery_level(status)` | SoC percentage computed from status |
+| `battery_level(status)` | SoC percentage from status (**raw** physical scale) |
+| `battery_level_scaled(status)` | SoC from status on the **user-facing** scale |
 | `current_power(status)` | `{location: realPowerW}` map |
 | `backup_time_remaining(status)` | Hours of backup at current load |
 | `scaled_to_raw_reserve(percent)` | User-facing reserve % → raw config value |
 | `raw_to_scaled_reserve(percent)` | Raw config value → user-facing reserve % |
+| `scaled_to_raw_soc(percent)` | User-facing SoC % → raw value |
+| `raw_to_scaled_soc(percent)` | Raw SoC value → user-facing SoC % |
 
 ## Exceptions
 

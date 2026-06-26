@@ -64,6 +64,17 @@ _ISLAND_MODE_ON_GRID: Final = 1
 _RESERVE_SCALE: Final = 0.95
 _RESERVE_OFFSET: Final = 5.0
 
+# State-of-charge is reported locally on the raw physical pack scale
+# (``get_battery_soe`` / ``battery_level``), but the Tesla app and Fleet API
+# (``live_status.percentage_charged``) show a user-facing value with the same
+# inaccessible bottom-5% buffer removed as backup reserve — i.e. the identical
+# transform ``raw = scaled * 0.95 + 5``. Kept as separate constants (rather
+# than reusing the reserve ones) because the two were verified independently
+# and are conceptually distinct settings. Verified on PW3: local
+# ``get_battery_soe`` 52.7778 == Fleet ``percentage_charged`` 50.2924.
+_SOC_SCALE: Final = 0.95
+_SOC_OFFSET: Final = 5.0
+
 # Wire-format constants for the hand-rolled setIslandMode / triggerIslanding
 # envelopes — see :meth:`PowerwallClient._build_island_envelope`.
 _WT_VARINT: Final = 0
@@ -180,6 +191,16 @@ class PowerwallClient:
                 f"Unexpected SoE payload: {data!r}"
             )
         return float(data["percentage"])
+
+    async def get_battery_soe_scaled(self) -> float:
+        """Return the **user-facing** state-of-charge percentage (0-100).
+
+        :meth:`get_battery_soe` returns the gateway's raw physical value
+        (bottom 5% is an inaccessible buffer); this applies
+        :func:`raw_to_scaled_soc` to match what the Tesla app and Fleet API
+        (`live_status.percentage_charged`) display — raw 5% maps to 0%.
+        """
+        return raw_to_scaled_soc(await self.get_battery_soe())
 
     async def get_grid_status(self) -> str:
         """Return the gateway grid status string (e.g. ``SystemGridConnected``)."""
@@ -881,11 +902,37 @@ def raw_to_scaled_reserve(raw_percent: float) -> float:
     return round((raw_percent - _RESERVE_OFFSET) / _RESERVE_SCALE, 4)
 
 
+def scaled_to_raw_soc(scaled_percent: float) -> float:
+    """Convert a user-facing SoC % (Tesla app / Fleet API) to the raw value.
+
+    ``raw = scaled * 0.95 + 5``. The user-facing scale is 0-100; the bottom
+    5% is an inaccessible buffer, so user-facing 0% is raw 5%. Raises
+    :class:`ValueError` if ``scaled_percent`` is outside 0-100.
+    """
+    if not 0 <= scaled_percent <= 100:
+        raise ValueError("scaled_percent must be between 0 and 100")
+    return round(scaled_percent * _SOC_SCALE + _SOC_OFFSET, 4)
+
+
+def raw_to_scaled_soc(raw_percent: float) -> float:
+    """Convert a gateway raw SoC value to the user-facing SoC %.
+
+    Inverse of :func:`scaled_to_raw_soc`: ``scaled = (raw - 5) / 0.95``. A raw
+    value of 5 maps to user-facing 0%. This is the transform that turns the
+    local ``get_battery_soe`` / ``battery_level`` reading into the figure the
+    Tesla app and Fleet API (`live_status.percentage_charged`) display.
+    """
+    return round((raw_percent - _SOC_OFFSET) / _SOC_SCALE, 4)
+
+
 def battery_level(status: StatusPayload) -> float | None:
     """Battery state-of-charge as a percentage (0-100), or None if unknown.
 
     Computed from ``nominalEnergyRemainingWh / nominalFullPackEnergyWh``
-    in a status payload returned by :meth:`PowerwallClient.get_status`.
+    in a status payload returned by :meth:`PowerwallClient.get_status`. This
+    is the **raw** physical value (bottom 5% is an inaccessible buffer); use
+    :func:`battery_level_scaled` for the user-facing value the Tesla app and
+    Fleet API show.
     """
     remaining = _lookup(
         status, "control", "systemStatus", "nominalEnergyRemainingWh"
@@ -894,6 +941,20 @@ def battery_level(status: StatusPayload) -> float | None:
     if not remaining or not full:
         return None
     return float(remaining) / float(full) * 100
+
+
+def battery_level_scaled(status: StatusPayload) -> float | None:
+    """User-facing battery SoC % (0-100) from a status payload, or None.
+
+    :func:`battery_level` returns the raw physical value; this applies
+    :func:`raw_to_scaled_soc` so the result matches the Tesla app and Fleet
+    API (`live_status.percentage_charged`). Returns None when
+    :func:`battery_level` cannot determine the level.
+    """
+    raw = battery_level(status)
+    if raw is None:
+        return None
+    return raw_to_scaled_soc(raw)
 
 
 def current_power(status: StatusPayload) -> dict[str, float | None]:
@@ -928,7 +989,10 @@ __all__ = [
     "PowerwallClient",
     "backup_time_remaining",
     "battery_level",
+    "battery_level_scaled",
     "current_power",
     "raw_to_scaled_reserve",
+    "raw_to_scaled_soc",
     "scaled_to_raw_reserve",
+    "scaled_to_raw_soc",
 ]
