@@ -106,6 +106,8 @@ so concurrent callers share one login.
 | Method | Effect |
 | --- | --- |
 | `write_config(updates)` | Patch `config.json` (dotted-path mapping) |
+| `set_backup_reserve(percent)` | Set backup reserve on the **user-facing** scale (Tesla app / Fleet API) |
+| `set_backup_reserve_raw(percent)` | Set backup reserve as the **raw** `config.json` value |
 | `schedule_max_backup(seconds)` | Schedule a manual max-backup event |
 | `cancel_max_backup()` | Cancel the active manual backup event |
 | `set_island_mode(off_grid=, force=, …)` | Send `setIslandModeRequest` |
@@ -124,6 +126,15 @@ so concurrent callers share one login.
 > issues the explicit black-start command if the mode-only request is a
 > no-op on your gateway.
 
+> **Backup-reserve scaling.** The gateway stores the reserve on a *raw*
+> scale that differs from what the Tesla app and Fleet API show: the bottom
+> 5% is an inaccessible buffer, so `raw = scaled * 0.95 + 5` (e.g. app-20%
+> is raw-24%, app-0% is raw-5%). `set_backup_reserve` takes the
+> **user-facing** value and applies that conversion for you;
+> `set_backup_reserve_raw` writes the raw value verbatim. Use the
+> `scaled_to_raw_reserve` / `raw_to_scaled_reserve` helpers to convert
+> explicitly.
+
 ### Pure helpers
 
 These operate on an already-fetched status payload — fetch once with
@@ -134,6 +145,8 @@ These operate on an already-fetched status payload — fetch once with
 | `battery_level(status)` | SoC percentage computed from status |
 | `current_power(status)` | `{location: realPowerW}` map |
 | `backup_time_remaining(status)` | Hours of backup at current load |
+| `scaled_to_raw_reserve(percent)` | User-facing reserve % → raw config value |
+| `raw_to_scaled_reserve(percent)` | Raw config value → user-facing reserve % |
 
 ## Exceptions
 
