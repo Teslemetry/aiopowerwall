@@ -133,6 +133,18 @@ so concurrent callers share one login.
 > issues the explicit black-start command if the mode-only request is a
 > no-op on your gateway.
 
+> **Storm mode is not locally settable.** Storm Watch is a Tesla-cloud
+> feature with no local representation: `storm_mode_enabled` is absent from
+> the gateway's `config.json`, and a local v1r `write_config` of that key is
+> silently dropped (the gateway acks the write but the key never persists).
+> Verified bidirectionally on PW3 — a local write reaches neither the local
+> config nor Fleet, and toggling the setting on Fleet leaves zero local
+> trace. There is deliberately no `set_storm_mode` method; toggle it through
+> the Fleet API (`storm_mode(enabled)`) instead and read the setting back
+> from `site_info.storm_mode_enabled`. (`live_status.storm_mode_active` is a
+> different field — it reports only whether a storm is *currently* being
+> responded to, not whether the feature is enabled.)
+
 > **Backup-reserve scaling.** The gateway stores the reserve on a *raw*
 > scale that differs from what the Tesla app and Fleet API show: the bottom
 > 5% is an inaccessible buffer, so `raw = scaled * 0.95 + 5` (e.g. app-20%
