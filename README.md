@@ -107,6 +107,7 @@ so concurrent callers share one login.
 | Method | Effect |
 | --- | --- |
 | `write_config(updates)` | Patch `config.json` (dotted-path mapping) |
+| `set_operation_mode(mode)` | Set `default_real_mode` (`self_consumption`/`autonomous`/`backup`) |
 | `set_backup_reserve(percent)` | Set backup reserve on the **user-facing** scale (Tesla app / Fleet API) |
 | `set_backup_reserve_raw(percent)` | Set backup reserve as the **raw** `config.json` value |
 | `schedule_max_backup(seconds)` | Schedule a manual max-backup event |

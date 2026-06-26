@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from .client import (
     DEFAULT_GATEWAY_HOST,
+    OPERATION_MODES,
     PowerwallClient,
     backup_time_remaining,
     battery_level,
@@ -46,6 +47,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
+    "OPERATION_MODES",
     "BackupEvent",
     "BackupEventsPayload",
     "ComponentsPayload",

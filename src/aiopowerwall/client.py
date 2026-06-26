@@ -52,6 +52,11 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_GATEWAY_HOST: Final = "192.168.91.1"
 
+# Accepted values for ``default_real_mode`` (the gateway operation mode). A
+# plain top-level string in ``config.json`` with no scaling — verified on PW3
+# that a local v1r write of each value sticks and reads back verbatim.
+OPERATION_MODES: Final = ("self_consumption", "autonomous", "backup")
+
 # setIslandModeRequest mode values used by both PW2 and PW3.
 _ISLAND_MODE_OFF_GRID: Final = 6
 _ISLAND_MODE_ON_GRID: Final = 1
@@ -328,6 +333,23 @@ class PowerwallClient:
         if not 0 <= percent <= 100:
             raise ValueError("percent must be between 0 and 100")
         await self.write_config({"site_info.backup_reserve_percent": percent})
+
+    async def set_operation_mode(self, mode: str) -> None:
+        """Set the gateway operation mode (``default_real_mode``).
+
+        ``mode`` must be one of :data:`OPERATION_MODES` —
+        ``self_consumption``, ``autonomous`` or ``backup``. The value is a
+        plain top-level string in ``config.json`` (no scaling); this method
+        writes it verbatim. Raises :class:`ValueError` for any other value.
+
+        Mirrors what the Tesla app and Fleet API ``operation()`` set; the
+        Fleet read-back is ``site_info.default_real_mode``.
+        """
+        if mode not in OPERATION_MODES:
+            raise ValueError(
+                f"mode must be one of {OPERATION_MODES!r}, got {mode!r}"
+            )
+        await self.write_config({"default_real_mode": mode})
 
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
         """Schedule a manual "max backup" event (reserve set to 100%)."""
@@ -994,6 +1016,7 @@ def backup_time_remaining(status: StatusPayload) -> float | None:
 
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
+    "OPERATION_MODES",
     "PowerwallClient",
     "backup_time_remaining",
     "battery_level",
