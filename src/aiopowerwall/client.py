@@ -56,6 +56,14 @@ DEFAULT_GATEWAY_HOST: Final = "192.168.91.1"
 _ISLAND_MODE_OFF_GRID: Final = 6
 _ISLAND_MODE_ON_GRID: Final = 1
 
+# Tesla scales the user-facing backup reserve (what the app and Fleet API
+# show, 0-100) into the gateway's raw ``config.json`` value as
+# ``raw = scaled * _RESERVE_SCALE + _RESERVE_OFFSET``. The bottom 5% is an
+# inaccessible buffer, so app-0% maps to raw-5%. Verified on PW3 firmware
+# across scaled→raw datapoints 5→9.75, 10→14.5, 20→24, 35→38.25, 60→62.
+_RESERVE_SCALE: Final = 0.95
+_RESERVE_OFFSET: Final = 5.0
+
 # Wire-format constants for the hand-rolled setIslandMode / triggerIslanding
 # envelopes — see :meth:`PowerwallClient._build_island_envelope`.
 _WT_VARINT: Final = 0
@@ -265,6 +273,33 @@ class PowerwallClient:
             raise PowerwallProtocolError(
                 "updateFile response missing filestore payload"
             )
+
+    async def set_backup_reserve(self, percent: float) -> None:
+        """Set the backup reserve to a **user-facing** percentage (0-100).
+
+        ``percent`` matches what the Tesla app and Fleet API display. Tesla
+        scales it into the gateway's raw ``config.json`` value as
+        ``raw = percent * 0.95 + 5`` (the bottom 5% is an inaccessible
+        buffer); this method computes that raw value and writes it.
+
+        Use :meth:`set_backup_reserve_raw` if you already have a raw value
+        and want it written verbatim. Raises :class:`ValueError` if
+        ``percent`` is outside 0-100.
+        """
+        raw = scaled_to_raw_reserve(percent)
+        await self.write_config({"site_info.backup_reserve_percent": raw})
+
+    async def set_backup_reserve_raw(self, percent: float) -> None:
+        """Set the **raw** backup reserve value (gateway ``config.json`` scale).
+
+        Writes ``site_info.backup_reserve_percent`` verbatim. The raw value
+        is *not* what the Tesla app / Fleet API show — app-0% is raw-5%. Use
+        :meth:`set_backup_reserve` for the user-facing scale. Raises
+        :class:`ValueError` if ``percent`` is outside 0-100.
+        """
+        if not 0 <= percent <= 100:
+            raise ValueError("percent must be between 0 and 100")
+        await self.write_config({"site_info.backup_reserve_percent": percent})
 
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
         """Schedule a manual "max backup" event (reserve set to 100%)."""
@@ -825,6 +860,27 @@ class PowerwallClient:
         target[keys[-1]] = value
 
 
+def scaled_to_raw_reserve(scaled_percent: float) -> float:
+    """Convert a user-facing reserve % (Tesla app / Fleet API) to the raw value.
+
+    ``raw = scaled * 0.95 + 5``. The user-facing scale is 0-100; the bottom
+    5% is an inaccessible buffer, so 0% user-facing is raw 5%. Raises
+    :class:`ValueError` if ``scaled_percent`` is outside 0-100.
+    """
+    if not 0 <= scaled_percent <= 100:
+        raise ValueError("scaled_percent must be between 0 and 100")
+    return round(scaled_percent * _RESERVE_SCALE + _RESERVE_OFFSET, 4)
+
+
+def raw_to_scaled_reserve(raw_percent: float) -> float:
+    """Convert a gateway raw reserve value to the user-facing reserve %.
+
+    Inverse of :func:`scaled_to_raw_reserve`: ``scaled = (raw - 5) / 0.95``.
+    A raw value of 5 maps to user-facing 0%.
+    """
+    return round((raw_percent - _RESERVE_OFFSET) / _RESERVE_SCALE, 4)
+
+
 def battery_level(status: StatusPayload) -> float | None:
     """Battery state-of-charge as a percentage (0-100), or None if unknown.
 
@@ -873,4 +929,6 @@ __all__ = [
     "backup_time_remaining",
     "battery_level",
     "current_power",
+    "raw_to_scaled_reserve",
+    "scaled_to_raw_reserve",
 ]

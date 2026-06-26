@@ -16,6 +16,8 @@ from .client import (
     backup_time_remaining,
     battery_level,
     current_power,
+    raw_to_scaled_reserve,
+    scaled_to_raw_reserve,
 )
 from .exceptions import (
     PowerwallAuthenticationError,
@@ -61,4 +63,6 @@ __all__ = [
     "backup_time_remaining",
     "battery_level",
     "current_power",
+    "raw_to_scaled_reserve",
+    "scaled_to_raw_reserve",
 ]
