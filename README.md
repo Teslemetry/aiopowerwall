@@ -128,13 +128,14 @@ so concurrent callers share one login.
 | `restore_from_curtailment()` | Restore mode + reserve captured by `curtail` |
 | `curtailment_active` (property) | True between `curtail` and `restore_from_curtailment` |
 
-> **Islanding caveat.** `set_island_mode` / `go_off_grid` post a local v1r
-> command that the gateway acknowledges but, on some firmwares, does not
-> actually act on — only the Fleet-API cloud relay path is known to
-> operate the contactor. Verify with `get_status()`
-> (`islanding.contactorClosed`) before relying on it. `trigger_islanding`
-> issues the explicit black-start command if the mode-only request is a
-> no-op on your gateway.
+> **Islanding.** `set_island_mode` / `go_off_grid` / `reconnect_grid` post a
+> local v1r command that operates the grid contactor. Verified on a Powerwall
+> 3: `go_off_grid()` opened the contactor (`islanding.contactorClosed` →
+> `false`) and `reconnect_grid()` closed it again (→ `true`). The PowerSync
+> project has reported firmwares that acknowledge the command without
+> actuating, so verify `get_status().islanding.contactorClosed` before relying
+> on it. `trigger_islanding` issues the explicit black-start command if the
+> mode-only request is a no-op on your gateway.
 
 > **Storm mode is not locally settable.** Storm Watch is a Tesla-cloud
 > feature with no local representation: `storm_mode_enabled` is absent from

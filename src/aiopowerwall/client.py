@@ -542,14 +542,15 @@ class PowerwallClient:
         the gateway acknowledges the message but does not operate the
         contactor.
 
-        .. warning:: The PowerSync project reports that local v1r returns a
-            success response for this command but **does not actuate the
-            contactor** — only the Fleet-API cloud relay path actually
-            islands the gateway. This implementation issues the local
-            command verbatim; verify the contactor state with
-            :meth:`get_status` (``islanding.contactorClosed``) before
-            relying on it. See :meth:`trigger_islanding` for the explicit
-            black-start command.
+        .. note:: Verified on a Powerwall 3 gateway that this local v1r
+            command **does** operate the contactor — ``go_off_grid`` opened it
+            and ``reconnect_grid`` closed it, with :meth:`get_status`
+            (``islanding.contactorClosed``) toggling to match. The PowerSync
+            project has reported firmwares where the gateway acknowledges the
+            command without actuating, so verify ``islanding.contactorClosed``
+            before relying on it. See :meth:`trigger_islanding` for the
+            explicit black-start command if the mode-only request is a no-op
+            on your gateway.
 
         Use :meth:`go_off_grid` / :meth:`reconnect_grid` for the
         higher-level convenience wrappers.
@@ -585,8 +586,9 @@ class PowerwallClient:
     ) -> None:
         """Disconnect from the grid (request contactor open) via local v1r.
 
-        Thin wrapper around :meth:`set_island_mode` — see that method's
-        notes about cloud-relay vs local-only command behaviour.
+        Thin wrapper around :meth:`set_island_mode` — see that method's note
+        on verifying the contactor state. Verified on PW3 to open the
+        contactor (``islanding.contactorClosed`` → ``False``).
         """
         await self.set_island_mode(
             off_grid=True, force=force, mode_override=mode_override
