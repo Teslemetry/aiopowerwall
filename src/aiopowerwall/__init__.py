@@ -23,6 +23,11 @@ from .client import (
     scaled_to_raw_reserve,
     scaled_to_raw_soc,
 )
+from .energysite import (
+    ISLAND_MODE_OFF_GRID,
+    ISLAND_MODE_ON_GRID,
+    PowerwallEnergySite,
+)
 from .exceptions import (
     PowerwallAuthenticationError,
     PowerwallConnectionError,
@@ -47,6 +52,8 @@ __version__ = "0.1.0"
 
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
+    "ISLAND_MODE_OFF_GRID",
+    "ISLAND_MODE_ON_GRID",
     "OPERATION_MODES",
     "BackupEvent",
     "BackupEventsPayload",
@@ -59,6 +66,7 @@ __all__ = [
     "PowerwallAuthenticationError",
     "PowerwallClient",
     "PowerwallConnectionError",
+    "PowerwallEnergySite",
     "PowerwallError",
     "PowerwallFaultError",
     "PowerwallProtocolError",
