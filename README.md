@@ -113,6 +113,7 @@ so concurrent callers share one login.
 | --- | --- |
 | `write_config(updates)` | Patch `config.json` (dotted-path mapping) |
 | `set_operation_mode(mode)` | Set `default_real_mode` (`self_consumption`/`autonomous`/`backup`) |
+| `set_tou_mode(mode)` | Set time-of-use optimization mode (`strategy.TOU_mode`, local-only) |
 | `set_export_rule(rule)` | Set grid-export rule (`battery_ok`/`pv_only`/`never`) |
 | `set_on_grid_solar_curtailment(enabled)` | Enable/disable on-grid solar curtailment |
 | `set_grid_charging(enabled)` | Allow/disallow charging the battery from the grid |
@@ -169,6 +170,16 @@ so concurrent callers share one login.
 > `site_info.disallow_charge_from_grid_with_solar_installed` flag: enabling
 > grid charging removes the key (absent = allowed, the default), disabling it
 > sets the key `true`. Treat a missing key as "grid charging allowed".
+
+> **Time-of-use mode (local-only, unvalidated).** `set_tou_mode(mode)` writes
+> `strategy.TOU_mode`, which controls how the gateway optimizes battery
+> dispatch against a TOU tariff. It is **not exposed by the Tesla Fleet API**,
+> so a local write is the only way to change it. The gateway does **not**
+> validate the value (verified on PW3: an arbitrary string persists verbatim),
+> so this is a deliberate pass-through — `"economic"` is the only value
+> confirmed in use. The TOU **tariff schedule** itself is *not* settable here:
+> it lives in the Tesla cloud (`tariff_content_v2`, managed via the Fleet API
+> or an aggregator) and never appears in the local `config.json`.
 
 > **Site import/export limits.** `set_import_limit(kw)` and
 > `set_export_limit(kw)` cap grid power in **kilowatts**, matching the Tesla

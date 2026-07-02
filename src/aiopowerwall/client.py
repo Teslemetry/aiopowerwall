@@ -374,6 +374,30 @@ class PowerwallClient:
             )
         await self.write_config({"default_real_mode": mode})
 
+    async def set_tou_mode(self, mode: str) -> None:
+        """Set the time-of-use optimization mode (``strategy.TOU_mode``).
+
+        Governs how the gateway optimizes battery dispatch against a
+        time-of-use tariff. This is **local-only** — the Tesla Fleet API does
+        not expose ``TOU_mode`` at all, so a local write is the only way to
+        change it.
+
+        .. warning:: The gateway does **not** validate this field — it stores
+            whatever string it is given (verified on a Powerwall 3), so a typo
+            silently sets an unrecognized mode. ``"economic"`` (cost
+            optimization) is the only value confirmed in use; other strategy
+            names are plausible but unverified. Pass a known-good value.
+
+        The tariff schedule itself cannot be set here: it lives in the Tesla
+        cloud (``tariff_content_v2``, managed via the Fleet API or an
+        aggregator) and never appears in the local ``config.json``.
+
+        Raises :class:`ValueError` if ``mode`` is not a non-empty string.
+        """
+        if not isinstance(mode, str) or not mode:
+            raise ValueError("mode must be a non-empty string")
+        await self.write_config({"strategy.TOU_mode": mode})
+
     async def set_grid_import_export(
         self,
         *,
