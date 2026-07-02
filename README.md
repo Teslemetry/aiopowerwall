@@ -115,6 +115,7 @@ so concurrent callers share one login.
 | `set_operation_mode(mode)` | Set `default_real_mode` (`self_consumption`/`autonomous`/`backup`) |
 | `set_export_rule(rule)` | Set grid-export rule (`battery_ok`/`pv_only`/`never`) |
 | `set_on_grid_solar_curtailment(enabled)` | Enable/disable on-grid solar curtailment |
+| `set_grid_charging(enabled)` | Allow/disallow charging the battery from the grid |
 | `set_backup_reserve(percent)` | Set backup reserve on the **user-facing** scale (Tesla app / Fleet API) |
 | `set_backup_reserve_raw(percent)` | Set backup reserve as the **raw** `config.json` value |
 | `schedule_max_backup(seconds)` | Schedule a manual max-backup event |
@@ -159,6 +160,12 @@ so concurrent callers share one login.
 > gateway only stores the key while enabled: after enabling, `get_config`
 > shows the key `true`; after disabling, the key is **absent** (the gateway
 > drops it rather than storing `false`) — treat a missing key as disabled.
+
+> **Grid charging.** `set_grid_charging(enabled)` controls whether the
+> battery may charge from the grid. The gateway stores the *inverse*
+> `site_info.disallow_charge_from_grid_with_solar_installed` flag: enabling
+> grid charging removes the key (absent = allowed, the default), disabling it
+> sets the key `true`. Treat a missing key as "grid charging allowed".
 
 > **Backup-reserve scaling.** The gateway stores the reserve on a *raw*
 > scale that differs from what the Tesla app and Fleet API show: the bottom

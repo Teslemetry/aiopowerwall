@@ -460,6 +460,26 @@ class PowerwallClient:
             {"site_info.on_grid_solar_curtailment_enabled": bool(enabled)}
         )
 
+    async def set_grid_charging(self, enabled: bool) -> None:
+        """Allow or disallow charging the battery from the grid.
+
+        ``enabled=True`` permits grid charging; ``enabled=False`` disallows
+        it. The gateway stores the inverse *disallow* flag
+        (``site_info.disallow_charge_from_grid_with_solar_installed``), which
+        this method sets for you.
+
+        .. note:: The gateway only stores the key while charging is
+            *disallowed*. After ``set_grid_charging(False)`` a
+            :meth:`get_config` shows
+            ``disallow_charge_from_grid_with_solar_installed: true``; after
+            ``set_grid_charging(True)`` the key is **absent** — the gateway
+            drops it rather than storing ``false``. Treat a missing key as
+            "grid charging allowed".
+        """
+        await self.write_config(
+            {"site_info.disallow_charge_from_grid_with_solar_installed": not enabled}
+        )
+
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
         """Schedule a manual "max backup" event (reserve set to 100%)."""
         if duration_seconds < 60:
