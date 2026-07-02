@@ -113,6 +113,7 @@ so concurrent callers share one login.
 | --- | --- |
 | `write_config(updates)` | Patch `config.json` (dotted-path mapping) |
 | `set_operation_mode(mode)` | Set `default_real_mode` (`self_consumption`/`autonomous`/`backup`) |
+| `set_export_rule(rule)` | Set grid-export rule (`battery_ok`/`pv_only`/`never`) |
 | `set_backup_reserve(percent)` | Set backup reserve on the **user-facing** scale (Tesla app / Fleet API) |
 | `set_backup_reserve_raw(percent)` | Set backup reserve as the **raw** `config.json` value |
 | `schedule_max_backup(seconds)` | Schedule a manual max-backup event |
@@ -144,6 +145,13 @@ so concurrent callers share one login.
 > from `site_info.storm_mode_enabled`. (`live_status.storm_mode_active` is a
 > different field — it reports only whether a storm is *currently* being
 > responded to, not whether the feature is enabled.)
+
+> **Export rule.** `set_export_rule(rule)` sets
+> `site_info.customer_preferred_export_rule` — `battery_ok` (export solar and
+> battery), `pv_only` (export solar only) or `never` (no export). It is a
+> plain string with no scaling, and `net_meter_mode` is a separate key that is
+> deliberately left untouched (verified independent on PW3: writing the export
+> rule never moves `net_meter_mode`).
 
 > **Backup-reserve scaling.** The gateway stores the reserve on a *raw*
 > scale that differs from what the Tesla app and Fleet API show: the bottom

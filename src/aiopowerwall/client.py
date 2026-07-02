@@ -60,9 +60,11 @@ DEFAULT_GATEWAY_HOST: Final = "192.168.91.1"
 # that a local v1r write of each value sticks and reads back verbatim.
 OPERATION_MODES: Final = ("self_consumption", "autonomous", "backup")
 
-# Accepted values for ``site_info.customer_preferred_export_rule``. Field
-# name and enum confirmed against the sibling jasonacox/pypowerwall project's
-# v1r config-write path (same Tesla local gateway schema).
+# Accepted values for the grid-export rule
+# (``site_info.customer_preferred_export_rule``). A plain nested string in
+# ``config.json`` with no scaling — verified on PW3 that a local v1r write of
+# each value sticks and reads back verbatim, and that ``net_meter_mode`` is an
+# independent key left untouched by the write.
 GRID_EXPORT_RULES: Final = ("battery_ok", "pv_only", "never")
 
 # setIslandModeRequest mode values used by both PW2 and PW3.
@@ -394,6 +396,9 @@ class PowerwallClient:
         set; the Fleet read-back is
         ``site_info.customer_preferred_export_rule`` /
         ``site_info.disallow_charge_from_grid_with_solar_installed``.
+
+        See :meth:`set_export_rule` for a single-purpose wrapper over the
+        export half.
         """
         updates: dict[str, Any] = {}
         if customer_preferred_export_rule is not None:
@@ -415,6 +420,27 @@ class PowerwallClient:
                 "and/or disallow_charge_from_grid_with_solar_installed"
             )
         await self.write_config(updates)
+
+    async def set_export_rule(self, rule: str) -> None:
+        """Set the grid-export rule (``customer_preferred_export_rule``).
+
+        ``rule`` must be one of :data:`GRID_EXPORT_RULES`:
+
+        - ``battery_ok`` — export both solar and battery to the grid
+        - ``pv_only`` — export solar only, never the battery
+        - ``never`` — no grid export at all
+
+        The value is a plain string in ``config.json`` (no scaling); this
+        method writes it verbatim and touches nothing else — ``net_meter_mode``
+        is a separate setting, verified independent on a Powerwall 3 (writing
+        the export rule never moves it). Raises :class:`ValueError` for any
+        other value.
+
+        Convenience wrapper over the export half of
+        :meth:`set_grid_import_export`; call that method directly to set the
+        export rule and the grid-charging policy in a single atomic write.
+        """
+        await self.set_grid_import_export(customer_preferred_export_rule=rule)
 
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
         """Schedule a manual "max backup" event (reserve set to 100%)."""
