@@ -162,6 +162,53 @@ These operate on an already-fetched status payload — fetch once with
 | `scaled_to_raw_soc(percent)` | User-facing SoC % → raw value |
 | `raw_to_scaled_soc(percent)` | Raw SoC value → user-facing SoC % |
 
+## EnergySite-compatible adapter
+
+`PowerwallEnergySite` wraps a `PowerwallClient` to present the same surface as
+the Tesla Fleet API `EnergySite` **by convention (duck typing)** — matching
+method names, signatures, and `dict[str, Any]` return shapes without importing
+or depending on `tesla_fleet_api`. This lets a primary/secondary energy router
+use the local LAN path as primary and a cloud `EnergySite` as fallback.
+
+```python
+from aiopowerwall import PowerwallClient, PowerwallEnergySite
+
+site = PowerwallEnergySite(pw)  # wraps an existing client
+await site.connect_if_needed()  # router health signal → PowerwallClient.connect
+await site.operation("autonomous")
+await site.backup(20)           # user-facing reserve percent
+status = await site.live_status()
+```
+
+Conventions:
+
+- **Command return shape.** Implemented commands return the cloud energy
+  command envelope `{"response": {"code": 201, "message": "", "result": True}}`.
+  Data reads (`get_backup_events`, `live_status`) wrap their payload under
+  `response`.
+- **Implemented locally:** `operation`, `backup`, `set_island_mode`,
+  `go_off_grid`, `reconnect_grid`, `schedule_backup_event`,
+  `cancel_backup_event`, `get_backup_events`, and `live_status`. Use the
+  `ISLAND_MODE_OFF_GRID` (6) / `ISLAND_MODE_ON_GRID` (1) constants with
+  `set_island_mode`.
+- **`schedule_backup_event`** accepts `start_time`/`priority` for signature
+  parity but does **not** honour them — the local event always starts now at
+  max priority.
+- **`live_status`** is best-effort from meters aggregates, user-facing SoC, and
+  grid status. Cloud keys the local v1r reads can't supply (`energy_left`,
+  `total_pack_energy`, `backup_capable`, `grid_services_*`,
+  `storm_mode_active`, `timestamp`, `wall_connectors`) are returned as `None`
+  rather than guessed.
+- **`connect_if_needed`** is an extra (not part of the cloud `EnergySite`
+  surface): it delegates to `PowerwallClient.connect` and serves as the
+  router's health signal.
+- **`site_info` is intentionally absent** so the router falls through to the
+  cloud for it. Every other command with no faithful local mapping yet
+  (`storm_mode`, `grid_import_export`, `time_of_use_settings`, the history
+  reads, the gRPC device commands, …) is scaffolded to raise
+  `NotImplementedError`, so a per-command-failover router cleanly falls back to
+  the cloud until the local path lands.
+
 ## Exceptions
 
 All errors are subclasses of `PowerwallError`:
