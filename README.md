@@ -114,6 +114,7 @@ so concurrent callers share one login.
 | `write_config(updates)` | Patch `config.json` (dotted-path mapping) |
 | `set_operation_mode(mode)` | Set `default_real_mode` (`self_consumption`/`autonomous`/`backup`) |
 | `set_export_rule(rule)` | Set grid-export rule (`battery_ok`/`pv_only`/`never`) |
+| `set_on_grid_solar_curtailment(enabled)` | Enable/disable on-grid solar curtailment |
 | `set_backup_reserve(percent)` | Set backup reserve on the **user-facing** scale (Tesla app / Fleet API) |
 | `set_backup_reserve_raw(percent)` | Set backup reserve as the **raw** `config.json` value |
 | `schedule_max_backup(seconds)` | Schedule a manual max-backup event |
@@ -152,6 +153,12 @@ so concurrent callers share one login.
 > plain string with no scaling, and `net_meter_mode` is a separate key that is
 > deliberately left untouched (verified independent on PW3: writing the export
 > rule never moves `net_meter_mode`).
+
+> **On-grid solar curtailment.** `set_on_grid_solar_curtailment(enabled)` sets
+> `site_info.on_grid_solar_curtailment_enabled` (boolean, no scaling). The
+> gateway only stores the key while enabled: after enabling, `get_config`
+> shows the key `true`; after disabling, the key is **absent** (the gateway
+> drops it rather than storing `false`) — treat a missing key as disabled.
 
 > **Backup-reserve scaling.** The gateway stores the reserve on a *raw*
 > scale that differs from what the Tesla app and Fleet API show: the bottom

@@ -442,6 +442,24 @@ class PowerwallClient:
         """
         await self.set_grid_import_export(customer_preferred_export_rule=rule)
 
+    async def set_on_grid_solar_curtailment(self, enabled: bool) -> None:
+        """Enable or disable on-grid solar curtailment.
+
+        When enabled, the gateway may curtail solar production while
+        grid-connected (e.g. to honour a zero/limited-export rule). Sets
+        ``site_info.on_grid_solar_curtailment_enabled``.
+
+        .. note:: The gateway only stores this key while *enabled*. After
+            ``set_on_grid_solar_curtailment(True)`` a :meth:`get_config` shows
+            ``on_grid_solar_curtailment_enabled: true``; after
+            ``set_on_grid_solar_curtailment(False)`` the key is **absent** —
+            the gateway drops it rather than storing ``false``. Treat a
+            missing key as disabled.
+        """
+        await self.write_config(
+            {"site_info.on_grid_solar_curtailment_enabled": bool(enabled)}
+        )
+
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
         """Schedule a manual "max backup" event (reserve set to 100%)."""
         if duration_seconds < 60:
