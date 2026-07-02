@@ -1,0 +1,328 @@
+"""Unit tests for the EnergySite-compatible adapter.
+
+These exercise :class:`PowerwallEnergySite` against a hand-rolled fake
+:class:`PowerwallClient` — no real hardware, LAN, or transport. They assert
+that each implemented command maps to the right client call and returns the
+cloud command envelope, that placeholder commands raise ``NotImplementedError``,
+that ``site_info`` is absent (so a router falls through to the cloud), and that
+``live_status`` produces the expected cloud-shaped keys from mocked local data.
+"""
+
+from __future__ import annotations
+
+from typing import Any, cast
+
+import pytest
+
+from aiopowerwall import PowerwallClient
+from aiopowerwall.energysite import (
+    ISLAND_MODE_OFF_GRID,
+    ISLAND_MODE_ON_GRID,
+    PowerwallEnergySite,
+)
+
+
+class FakeClient:
+    """Records the client calls the adapter makes and returns canned reads."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+
+    # writes / commands -----------------------------------------------------
+    async def connect(self) -> str:
+        self.calls.append(("connect",))
+        return "1234567-00-A--CJ2000000000"
+
+    async def set_operation_mode(self, mode: str) -> None:
+        self.calls.append(("set_operation_mode", mode))
+
+    async def set_backup_reserve(self, percent: float) -> None:
+        self.calls.append(("set_backup_reserve", percent))
+
+    async def set_island_mode(
+        self,
+        *,
+        off_grid: bool,
+        force: bool = True,
+        mode_override: int | None = None,
+    ) -> None:
+        self.calls.append(("set_island_mode", off_grid, force, mode_override))
+
+    async def go_off_grid(
+        self, *, force: bool = True, mode_override: int | None = None
+    ) -> None:
+        self.calls.append(("go_off_grid",))
+
+    async def reconnect_grid(self) -> None:
+        self.calls.append(("reconnect_grid",))
+
+    async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
+        self.calls.append(("schedule_max_backup", duration_seconds))
+
+    async def cancel_max_backup(self) -> None:
+        self.calls.append(("cancel_max_backup",))
+
+    # reads -----------------------------------------------------------------
+    async def get_backup_events(self) -> dict[str, Any]:
+        self.calls.append(("get_backup_events",))
+        return {
+            "manual_backup": {"active": True, "duration_seconds": 3600},
+            "backup_events": [{"id": "abc", "name": "evt"}],
+        }
+
+    async def get_meters_aggregates(self) -> dict[str, Any]:
+        return {
+            "site": {"instant_power": 1500.0},
+            "battery": {"instant_power": -1000.0},
+            "load": {"instant_power": 500.0},
+            "solar": {"instant_power": 2000.0},
+            "generator": {"instant_power": 0.0},
+        }
+
+    async def get_battery_soe(self) -> float:
+        return 50.2924
+
+    async def get_grid_status(self) -> str:
+        return "SystemGridConnected"
+
+
+def _adapter() -> tuple[PowerwallEnergySite, FakeClient]:
+    fake = FakeClient()
+    site = PowerwallEnergySite(cast(PowerwallClient, fake))
+    return site, fake
+
+
+_OK = {"response": {"code": 201, "message": "", "result": True}}
+
+
+# ── Implemented commands ────────────────────────────────────────────────────
+
+
+async def test_operation_maps_to_set_operation_mode() -> None:
+    site, fake = _adapter()
+    result = await site.operation("autonomous")
+    assert fake.calls == [("set_operation_mode", "autonomous")]
+    assert result == _OK
+
+
+async def test_backup_maps_to_set_backup_reserve() -> None:
+    site, fake = _adapter()
+    result = await site.backup(20)
+    assert fake.calls == [("set_backup_reserve", 20)]
+    assert result == _OK
+
+
+async def test_set_island_mode_off_grid_defaults_force_true() -> None:
+    site, fake = _adapter()
+    result = await site.set_island_mode(ISLAND_MODE_OFF_GRID)
+    assert fake.calls == [
+        ("set_island_mode", True, True, ISLAND_MODE_OFF_GRID)
+    ]
+    assert result == _OK
+
+
+async def test_set_island_mode_on_grid_defaults_force_false() -> None:
+    site, fake = _adapter()
+    result = await site.set_island_mode(ISLAND_MODE_ON_GRID)
+    assert fake.calls == [
+        ("set_island_mode", False, False, ISLAND_MODE_ON_GRID)
+    ]
+    assert result == _OK
+
+
+async def test_set_island_mode_explicit_force_overrides_default() -> None:
+    site, fake = _adapter()
+    await site.set_island_mode(ISLAND_MODE_OFF_GRID, force=False)
+    assert fake.calls == [
+        ("set_island_mode", True, False, ISLAND_MODE_OFF_GRID)
+    ]
+
+
+async def test_go_off_grid_maps_to_client() -> None:
+    site, fake = _adapter()
+    result = await site.go_off_grid()
+    assert fake.calls == [("go_off_grid",)]
+    assert result == _OK
+
+
+async def test_reconnect_grid_maps_to_client() -> None:
+    site, fake = _adapter()
+    result = await site.reconnect_grid()
+    assert fake.calls == [("reconnect_grid",)]
+    assert result == _OK
+
+
+async def test_schedule_backup_event_uses_duration() -> None:
+    site, fake = _adapter()
+    result = await site.schedule_backup_event(duration_seconds=3600)
+    assert fake.calls == [("schedule_max_backup", 3600)]
+    assert result == _OK
+
+
+async def test_schedule_backup_event_defaults_duration() -> None:
+    site, fake = _adapter()
+    # start_time / priority are accepted but not honoured locally.
+    await site.schedule_backup_event(start_time="2026-01-01T00:00:00Z", priority=5)
+    assert fake.calls == [("schedule_max_backup", 7200)]
+
+
+async def test_cancel_backup_event_maps_to_client() -> None:
+    site, fake = _adapter()
+    result = await site.cancel_backup_event()
+    assert fake.calls == [("cancel_max_backup",)]
+    assert result == _OK
+
+
+async def test_get_backup_events_wraps_payload_under_response() -> None:
+    site, fake = _adapter()
+    result = await site.get_backup_events()
+    assert ("get_backup_events",) in fake.calls
+    assert result == {
+        "response": {
+            "manual_backup": {"active": True, "duration_seconds": 3600},
+            "backup_events": [{"id": "abc", "name": "evt"}],
+        }
+    }
+
+
+async def test_connect_if_needed_delegates_to_connect() -> None:
+    site, fake = _adapter()
+    await site.connect_if_needed()
+    assert fake.calls == [("connect",)]
+
+
+# ── live_status ─────────────────────────────────────────────────────────────
+
+_LIVE_STATUS_KEYS = {
+    "solar_power",
+    "energy_left",
+    "total_pack_energy",
+    "percentage_charged",
+    "backup_capable",
+    "battery_power",
+    "load_power",
+    "grid_power",
+    "grid_services_power",
+    "generator_power",
+    "grid_status",
+    "grid_services_active",
+    "island_status",
+    "storm_mode_active",
+    "timestamp",
+    "wall_connectors",
+}
+
+
+async def test_live_status_shape_and_available_values() -> None:
+    site, _ = _adapter()
+    result = await site.live_status()
+    assert set(result) == {"response"}
+    payload = result["response"]
+    assert set(payload) == _LIVE_STATUS_KEYS
+
+    # Values derived from the mocked local reads.
+    assert payload["solar_power"] == 2000.0
+    assert payload["battery_power"] == -1000.0
+    assert payload["load_power"] == 500.0
+    assert payload["grid_power"] == 1500.0
+    assert payload["generator_power"] == 0.0
+    assert payload["percentage_charged"] == 50.2924
+    assert payload["grid_status"] == "Active"
+    assert payload["island_status"] == "on_grid"
+
+    # Documented gaps are surfaced as None, not guessed.
+    for gap in (
+        "energy_left",
+        "total_pack_energy",
+        "backup_capable",
+        "grid_services_power",
+        "grid_services_active",
+        "storm_mode_active",
+        "timestamp",
+        "wall_connectors",
+    ):
+        assert payload[gap] is None
+
+
+async def test_live_status_missing_meter_yields_none() -> None:
+    site, fake = _adapter()
+
+    async def _empty_meters() -> dict[str, Any]:
+        return {}
+
+    fake.get_meters_aggregates = _empty_meters  # type: ignore[method-assign]
+    payload = (await site.live_status())["response"]
+    assert payload["solar_power"] is None
+    assert payload["battery_power"] is None
+
+
+async def test_live_status_islanded_grid_status() -> None:
+    site, fake = _adapter()
+
+    async def _islanded() -> str:
+        return "SystemIslandedActive"
+
+    fake.get_grid_status = _islanded  # type: ignore[method-assign]
+    payload = (await site.live_status())["response"]
+    assert payload["grid_status"] == "Inactive"
+    assert payload["island_status"] == "off_grid"
+
+
+async def test_live_status_unknown_grid_status_falls_back() -> None:
+    site, fake = _adapter()
+
+    async def _weird() -> str:
+        return "SomethingBrandNew"
+
+    fake.get_grid_status = _weird  # type: ignore[method-assign]
+    payload = (await site.live_status())["response"]
+    assert payload["grid_status"] == "Unknown"
+    assert payload["island_status"] == "island_status_unknown"
+
+
+# ── site_info is deliberately absent ─────────────────────────────────────────
+
+
+def test_site_info_is_absent_on_adapter() -> None:
+    site, _ = _adapter()
+    assert not hasattr(site, "site_info")
+
+
+# ── Placeholder commands raise NotImplementedError ───────────────────────────
+
+_PLACEHOLDERS: list[tuple[str, tuple[Any, ...]]] = [
+    ("storm_mode", (True,)),
+    ("off_grid_vehicle_charging_reserve", (10,)),
+    ("grid_import_export", ()),
+    ("time_of_use_settings", ({},)),
+    ("backup_history", ("day",)),
+    ("charge_history", ("2026-01-01", "2026-01-31")),
+    ("energy_history", ("day",)),
+    ("get_system_info", ()),
+    ("raw_networking_status", ()),
+    ("get_networking_status", ()),
+    ("wifi_scan", ()),
+    ("get_device_cert", ()),
+    ("get_cellular_info", ()),
+    ("check_for_update", ()),
+    ("check_for_update_urgency", ()),
+    ("check_internet", ()),
+    ("set_local_site_config", ()),
+    ("get_teg_config", ()),
+    ("list_authorized_clients", ()),
+    ("add_authorized_client", ()),
+    ("remove_authorized_client", ()),
+    ("get_signed_commands_public_key", ()),
+]
+
+
+@pytest.mark.parametrize("name,args", _PLACEHOLDERS)
+async def test_placeholder_raises_not_implemented(
+    name: str, args: tuple[Any, ...]
+) -> None:
+    site, fake = _adapter()
+    method = getattr(site, name)
+    with pytest.raises(NotImplementedError):
+        await method(*args)
+    # Placeholders must not touch the local client.
+    assert fake.calls == []
