@@ -460,6 +460,34 @@ class PowerwallClient:
             {"site_info.on_grid_solar_curtailment_enabled": bool(enabled)}
         )
 
+    async def set_import_limit(self, kilowatts: float) -> None:
+        """Set the maximum grid **import** power, in kilowatts.
+
+        Caps how much power the site may draw from the grid. ``kilowatts``
+        matches the Tesla app's grid-import limit (the Tesla One installer app
+        shows the same figure in watts, i.e. ``kilowatts * 1000``). Fractional
+        values are accepted (e.g. ``2.5``). Sets
+        ``site_info.max_site_meter_power_ac`` verbatim — no scaling. Raises
+        :class:`ValueError` if ``kilowatts`` is negative.
+        """
+        if kilowatts < 0:
+            raise ValueError("kilowatts must be non-negative")
+        await self.write_config({"site_info.max_site_meter_power_ac": kilowatts})
+
+    async def set_export_limit(self, kilowatts: float) -> None:
+        """Set the maximum grid **export** power, in kilowatts.
+
+        Caps how much power the site may push to the grid. ``kilowatts``
+        matches the Tesla app's grid-export limit; pass a positive magnitude.
+        Fractional values are accepted (e.g. ``2.5``). The gateway represents
+        export as *negative* site-meter power, so this writes ``-kilowatts`` to
+        ``site_info.min_site_meter_power_ac`` (no scaling). Raises
+        :class:`ValueError` if ``kilowatts`` is negative.
+        """
+        if kilowatts < 0:
+            raise ValueError("kilowatts must be non-negative")
+        await self.write_config({"site_info.min_site_meter_power_ac": -kilowatts})
+
     async def set_grid_charging(self, enabled: bool) -> None:
         """Allow or disallow charging the battery from the grid.
 

@@ -116,6 +116,8 @@ so concurrent callers share one login.
 | `set_export_rule(rule)` | Set grid-export rule (`battery_ok`/`pv_only`/`never`) |
 | `set_on_grid_solar_curtailment(enabled)` | Enable/disable on-grid solar curtailment |
 | `set_grid_charging(enabled)` | Allow/disallow charging the battery from the grid |
+| `set_import_limit(kilowatts)` | Set max grid **import** power (kW) |
+| `set_export_limit(kilowatts)` | Set max grid **export** power (kW) |
 | `set_backup_reserve(percent)` | Set backup reserve on the **user-facing** scale (Tesla app / Fleet API) |
 | `set_backup_reserve_raw(percent)` | Set backup reserve as the **raw** `config.json` value |
 | `schedule_max_backup(seconds)` | Schedule a manual max-backup event |
@@ -167,6 +169,16 @@ so concurrent callers share one login.
 > `site_info.disallow_charge_from_grid_with_solar_installed` flag: enabling
 > grid charging removes the key (absent = allowed, the default), disabling it
 > sets the key `true`. Treat a missing key as "grid charging allowed".
+
+> **Site import/export limits.** `set_import_limit(kw)` and
+> `set_export_limit(kw)` cap grid power in **kilowatts**, matching the Tesla
+> app (the Tesla One installer app shows the same figure in watts, ×1000 — no
+> scaling in the config). They map to the site-meter power bounds:
+> `max_site_meter_power_ac` (import, positive) and `min_site_meter_power_ac`
+> (export, stored negative — pass a positive magnitude). Fractional kW are
+> accepted (verified on PW3: export 2.5 persisted verbatim). Mapping confirmed
+> on hardware — setting the import limit to 12 showed as the import limit in
+> the app.
 
 > **Backup-reserve scaling.** The gateway stores the reserve on a *raw*
 > scale that differs from what the Tesla app and Fleet API show: the bottom
