@@ -194,11 +194,13 @@ Conventions:
 - **`schedule_backup_event`** accepts `start_time`/`priority` for signature
   parity but does **not** honour them — the local event always starts now at
   max priority.
-- **`live_status`** is best-effort from meters aggregates, user-facing SoC, and
-  grid status. Cloud keys the local v1r reads can't supply (`energy_left`,
-  `total_pack_energy`, `backup_capable`, `grid_services_*`,
-  `storm_mode_active`, `timestamp`, `wall_connectors`) are returned as `None`
-  rather than guessed.
+- **`live_status`** is best-effort from meters aggregates, the gateway status
+  query, and grid status. `percentage_charged`, `energy_left`, and
+  `total_pack_energy` all come from one `get_status()` read — the user-facing
+  SoC via `battery_level()`, and the Wh figures straight from
+  `control.systemStatus`. Cloud keys with no local v1r equivalent
+  (`backup_capable`, `grid_services_*`, `storm_mode_active`, `timestamp`,
+  `wall_connectors`) are returned as `None` rather than guessed.
 - **`connect_if_needed`** is an extra (not part of the cloud `EnergySite`
   surface): it delegates to `PowerwallClient.connect` and serves as the
   router's health signal.

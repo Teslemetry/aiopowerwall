@@ -79,8 +79,15 @@ class FakeClient:
             "generator": {"instant_power": 0.0},
         }
 
-    async def get_battery_soe(self) -> float:
-        return 50.2924
+    async def get_status(self) -> dict[str, Any]:
+        return {
+            "control": {
+                "systemStatus": {
+                    "nominalEnergyRemainingWh": 52777.8,
+                    "nominalFullPackEnergyWh": 100000.0,
+                }
+            }
+        }
 
     async def get_grid_status(self) -> str:
         return "SystemGridConnected"
@@ -227,13 +234,13 @@ async def test_live_status_shape_and_available_values() -> None:
     assert payload["grid_power"] == 1500.0
     assert payload["generator_power"] == 0.0
     assert payload["percentage_charged"] == 50.2924
+    assert payload["energy_left"] == 52777.8
+    assert payload["total_pack_energy"] == 100000.0
     assert payload["grid_status"] == "Active"
     assert payload["island_status"] == "on_grid"
 
     # Documented gaps are surfaced as None, not guessed.
     for gap in (
-        "energy_left",
-        "total_pack_energy",
         "backup_capable",
         "grid_services_power",
         "grid_services_active",
@@ -254,6 +261,19 @@ async def test_live_status_missing_meter_yields_none() -> None:
     payload = (await site.live_status())["response"]
     assert payload["solar_power"] is None
     assert payload["battery_power"] is None
+
+
+async def test_live_status_missing_status_yields_none() -> None:
+    site, fake = _adapter()
+
+    async def _empty_status() -> dict[str, Any]:
+        return {}
+
+    fake.get_status = _empty_status  # type: ignore[method-assign]
+    payload = (await site.live_status())["response"]
+    assert payload["percentage_charged"] is None
+    assert payload["energy_left"] is None
+    assert payload["total_pack_energy"] is None
 
 
 async def test_live_status_islanded_grid_status() -> None:
