@@ -30,10 +30,21 @@ Deliberate conventions to preserve:
   per-command-failover router falls back to cloud). Only `site_info` is omitted entirely.
 - `schedule_backup_event` maps to `schedule_max_backup`: `start_time`/`priority` are
   accepted for signature parity but **not honoured** (event starts now at max priority).
-- `live_status` is best-effort from meters aggregates + user-facing SoE + grid status;
-  keys the local v1r reads can't supply (`energy_left`, `total_pack_energy`,
-  `backup_capable`, `grid_services_*`, `storm_mode_active`, `timestamp`, `wall_connectors`)
-  are returned as `None` rather than guessed. Grid-status→`(grid_status, island_status)`
-  translation is a best-effort map (`_GRID_STATUS_MAP`).
+- `live_status` is best-effort from meters aggregates + gateway status + grid status.
+  `percentage_charged`, `energy_left`, and `total_pack_energy` all come from a single
+  `PowerwallClient.get_status()` read: SoC via `battery_level()`, and the Wh figures
+  directly from `control.systemStatus.{nominalEnergyRemainingWh,nominalFullPackEnergyWh}`
+  (the same fields `battery_level_raw()` uses). Prefer `get_status()` + `battery_level()`
+  over a separate `get_battery_soe()` call so the Wh fields come along for free. Keys
+  with no local v1r equivalent (`backup_capable`, `grid_services_*`, `storm_mode_active`,
+  `timestamp`, `wall_connectors`) are returned as `None` rather than guessed.
+  Grid-status→`(grid_status, island_status)` translation is a best-effort map
+  (`_GRID_STATUS_MAP`).
 - `connect_if_needed` is not part of the cloud `EnergySite`; it's the router's health
   signal (delegates to `PowerwallClient.connect`).
+- The reference router (`tesla_fleet_api.tesla.router.Router`, sibling `python-tesla-fleet-api`
+  project) dispatches by `hasattr(backend, name)` per call, not a fixed interface — a
+  backend that omits a method entirely is just skipped (no error), while one that defines
+  it and raises is retried on the next backend. That's why placeholders raise
+  `NotImplementedError` rather than being left undefined: it keeps the full command
+  surface scaffolded for later wiring while still falling through to the cloud today.

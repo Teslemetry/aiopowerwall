@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from .client import PowerwallClient
+from .client import PowerwallClient, battery_level
 
 # Island-mode wire values (mirror ``tesla_fleet_api.const.EnergyIslandMode`` by
 # convention — we do not import it). Mode 6 opens the grid contactor
@@ -78,6 +78,20 @@ def _instant_power(meters: Mapping[str, Any], location: str) -> float | None:
     if not isinstance(entry, Mapping):
         return None
     value = entry.get("instant_power")
+    if not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _system_status_field(status: Mapping[str, Any], field: str) -> float | None:
+    """Return ``status["control"]["systemStatus"][field]`` as a float, or None."""
+    control = status.get("control")
+    if not isinstance(control, Mapping):
+        return None
+    system_status = control.get("systemStatus")
+    if not isinstance(system_status, Mapping):
+        return None
+    value = system_status.get(field)
     if not isinstance(value, (int, float)):
         return None
     return float(value)
@@ -206,18 +220,25 @@ class PowerwallEnergySite:
         """Return a best-effort cloud-shaped ``live_status`` payload.
 
         Built from data the local gateway already exposes — ``/api/meters/
-        aggregates`` (instantaneous power per location), the user-facing state
-        of charge, and the grid-status string. The result mirrors the cloud
+        aggregates`` (instantaneous power per location), the gateway status
+        query (user-facing state of charge plus nominal pack energy), and the
+        grid-status string. The result mirrors the cloud
         ``live_status().response`` object.
 
-        Gaps: several cloud keys are not derivable from the local v1r reads used
-        here and are returned as ``None`` rather than guessed —
-        ``energy_left``, ``total_pack_energy``, ``backup_capable``,
+        ``percentage_charged``, ``energy_left`` and ``total_pack_energy`` all
+        come from the one :meth:`PowerwallClient.get_status` read: the
+        user-facing SoC via :func:`~aiopowerwall.client.battery_level`, and
+        the Wh figures directly from ``control.systemStatus`` — the same
+        ``nominalEnergyRemainingWh`` / ``nominalFullPackEnergyWh`` fields that
+        back :func:`~aiopowerwall.client.battery_level_raw`.
+
+        Gaps: some cloud keys have no local v1r equivalent and are returned as
+        ``None`` rather than guessed — ``backup_capable``,
         ``grid_services_active``, ``grid_services_power``, ``storm_mode_active``,
         ``timestamp`` and ``wall_connectors``.
         """
         meters = await self._client.get_meters_aggregates()
-        percentage_charged = await self._client.get_battery_soe()
+        status = await self._client.get_status()
         grid_status_raw = await self._client.get_grid_status()
 
         grid_status, island_status = _GRID_STATUS_MAP.get(
@@ -227,9 +248,13 @@ class PowerwallEnergySite:
         return {
             "response": {
                 "solar_power": _instant_power(meters, "solar"),
-                "energy_left": None,
-                "total_pack_energy": None,
-                "percentage_charged": percentage_charged,
+                "energy_left": _system_status_field(
+                    status, "nominalEnergyRemainingWh"
+                ),
+                "total_pack_energy": _system_status_field(
+                    status, "nominalFullPackEnergyWh"
+                ),
+                "percentage_charged": battery_level(status),
                 "backup_capable": None,
                 "battery_power": _instant_power(meters, "battery"),
                 "load_power": _instant_power(meters, "load"),
