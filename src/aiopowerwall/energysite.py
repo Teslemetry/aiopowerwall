@@ -15,8 +15,9 @@ Design notes:
 * **Implemented commands** map to the corresponding
   :class:`PowerwallClient` call and normalise the result into the cloud energy
   command envelope, ``{"response": {"code": 201, "message": "", "result":
-  True}}``. Data reads (:meth:`get_backup_events`, :meth:`live_status`) wrap
-  their payload under ``response`` the same way the cloud HTTP responses do.
+  True}}``. Data reads (:meth:`get_backup_events`, :meth:`live_status`,
+  :meth:`list_authorized_clients`) wrap their payload under ``response`` the
+  same way the cloud HTTP responses do.
 * **Placeholder commands** (things the local v1r path cannot do yet) raise
   :class:`NotImplementedError` with a ``TODO``. They are scaffolded now so the
   full command surface exists and can be "wired up once implemented"; once the
@@ -270,6 +271,23 @@ class PowerwallEnergySite:
             }
         }
 
+    async def list_authorized_clients(self) -> dict[str, Any]:
+        """Return the authorized clients (paired keys) registered with the gateway.
+
+        Maps to :meth:`PowerwallClient.list_authorized_clients` and wraps the
+        local payload under ``response``. ``clients`` matches one of the two
+        keys the cloud envelope is observed to use (the other being
+        ``authorized_clients``), so a caller parsing either shape works
+        unchanged against this local read.
+        """
+        payload = await self._client.list_authorized_clients()
+        return {
+            "response": {
+                "clients": payload.get("clients", []),
+                "enable_line_switch_off": payload.get("enable_line_switch_off"),
+            }
+        }
+
     # ── Placeholder commands (no faithful local mapping yet) ────────────────
     #
     # These raise NotImplementedError on purpose: the full command surface is
@@ -419,12 +437,6 @@ class PowerwallEnergySite:
         local ``config.json`` returned by :meth:`PowerwallClient.get_config`;
         not reproduced yet."""
         raise NotImplementedError("get_teg_config is not implemented locally yet")
-
-    async def list_authorized_clients(self) -> dict[str, Any]:
-        """TODO: wire up the authorized-clients gRPC command over v1r."""
-        raise NotImplementedError(
-            "list_authorized_clients is not implemented locally yet"
-        )
 
     async def add_authorized_client(
         self,

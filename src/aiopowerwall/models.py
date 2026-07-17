@@ -45,6 +45,28 @@ class BackupEventsPayload(TypedDict, total=False):
     backup_events: list[BackupEvent]
 
 
+class AuthorizedClient(TypedDict, total=False):
+    """One registered client entry from `list_authorized_clients()`."""
+
+    public_key: str
+    state: str
+    type: str
+    description: str
+    key_type: str
+    roles: list[str]
+    verification: str
+    added_time: int | None
+    identifier: str | None
+    authorized_by_public_key: str | None
+
+
+class AuthorizedClientsPayload(TypedDict, total=False):
+    """Result of :meth:`PowerwallClient.list_authorized_clients`."""
+
+    clients: list[AuthorizedClient]
+    enable_line_switch_off: bool
+
+
 # The Powerwall returns deeply nested config/status/components/controller
 # payloads. These aliases give callers a stable named type without forcing
 # us to enumerate every signal — for static analysis they behave like
@@ -56,6 +78,8 @@ ControllerPayload = dict[str, Any]
 ComponentsPayload = dict[str, Any]
 
 __all__ = [
+    "AuthorizedClient",
+    "AuthorizedClientsPayload",
     "BackupEvent",
     "BackupEventsPayload",
     "ComponentsPayload",

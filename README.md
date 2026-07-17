@@ -184,13 +184,17 @@ Conventions:
 
 - **Command return shape.** Implemented commands return the cloud energy
   command envelope `{"response": {"code": 201, "message": "", "result": True}}`.
-  Data reads (`get_backup_events`, `live_status`) wrap their payload under
-  `response`.
+  Data reads (`get_backup_events`, `live_status`, `list_authorized_clients`)
+  wrap their payload under `response`.
 - **Implemented locally:** `operation`, `backup`, `set_island_mode`,
   `go_off_grid`, `reconnect_grid`, `schedule_backup_event`,
-  `cancel_backup_event`, `get_backup_events`, and `live_status`. Use the
-  `ISLAND_MODE_OFF_GRID` (6) / `ISLAND_MODE_ON_GRID` (1) constants with
-  `set_island_mode`.
+  `cancel_backup_event`, `get_backup_events`, `live_status`, and
+  `list_authorized_clients`. Use the `ISLAND_MODE_OFF_GRID` (6) /
+  `ISLAND_MODE_ON_GRID` (1) constants with `set_island_mode`.
+- **`list_authorized_clients`** reads the gateway's registered-client list
+  over the local `AuthorizationMessages` v1r command — no cloud round-trip.
+  `add_authorized_client`/`remove_authorized_client` (writes) are not wired up
+  yet and still fall back to the cloud.
 - **`schedule_backup_event`** accepts `start_time`/`priority` for signature
   parity but does **not** honour them — the local event always starts now at
   max priority.

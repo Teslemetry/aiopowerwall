@@ -22,7 +22,8 @@ Deliberate conventions to preserve:
   signatures, and `dict[str, Any]` return shapes only. Do not add the import.
 - **Command return shape**: implemented commands return the cloud energy command
   envelope `{"response": {"code": 201, "message": "", "result": True}}` (`_ok_response()`).
-  Data reads (`get_backup_events`, `live_status`) wrap their payload under `response`.
+  Data reads (`get_backup_events`, `live_status`, `list_authorized_clients`) wrap their
+  payload under `response`.
 - **`site_info` is intentionally absent** (not a stub) so the router falls through to the
   cloud for it. Do not add it.
 - **Placeholders vs omission**: everything with no faithful local mapping yet raises
@@ -48,3 +49,39 @@ Deliberate conventions to preserve:
   it and raises is retried on the next backend. That's why placeholders raise
   `NotImplementedError` rather than being left undefined: it keeps the full command
   surface scaffolded for later wiring while still falling through to the cloud today.
+
+## Extending the TEDAPI proto (`src/aiopowerwall/proto/`)
+
+`tedapi_combined.proto` only checks in the message oneofs actually wired up (e.g.
+`TEGMessages` fields 45-50) — other categories (`WCMessages`, `AuthorizationMessages`,
+…) start as `bytes placeholder = 1` stubs until a command in that category is
+implemented. When wiring up a new command:
+
+- The authoritative field numbers/message shapes are Tesla's real schema, published at
+  [`Matthew1471/Tesla-API`](https://github.com/Matthew1471/Tesla-API)
+  (`Documentation/Protobuf/tesla_api/protobuf/energy_device/v1/`) — this checked-in proto
+  already matches it exactly wherever both define the same message (verified for
+  `TEGMessages`, `MessageEnvelope`, `Participant`). Port only the messages/fields the new
+  command needs; leave the rest as `//`-commented oneof entries (mirroring how
+  `TEGMessages` documents unported fields) rather than porting the whole category.
+- `PowerwallClient._send_command_request(category=..., message_cls=..., ...)` is the
+  shared helper for any `MessageEnvelope` oneof category (not just `teg`) — reuse it for
+  new categories instead of hand-rolling another `_send_*_request` copy.
+- Regenerate bindings with `protoc --python_out=. tedapi.proto tedapi_combined.proto`
+  from `src/aiopowerwall/proto/` — but pin a `protoc`/`grpcio-tools` version whose
+  emitted gencode version is `<=` the `protobuf` package version actually installed
+  (`python -c "import google.protobuf; print(google.protobuf.__version__)"`). The
+  latest `grpcio-tools` (via `uvx --from grpcio-tools python -m grpc_tools.protoc`)
+  emits gencode that calls `ValidateProtobufRuntimeVersion` and hard-fails at import
+  if that check is newer than the installed runtime — `grpcio-tools==1.68.0` (protoc
+  ~28, gencode ~5.28) has stayed compatible with this repo's `protobuf>=4.25` floor.
+  Only regenerate the one `_pb2.py` file whose `.proto` you actually changed; a
+  no-op regen of the other still touches the file (version-header/serialization
+  format churn) with no functional difference — discard that diff.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
