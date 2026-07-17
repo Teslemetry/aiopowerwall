@@ -92,6 +92,13 @@ class FakeClient:
     async def get_grid_status(self) -> str:
         return "SystemGridConnected"
 
+    async def list_authorized_clients(self) -> dict[str, Any]:
+        self.calls.append(("list_authorized_clients",))
+        return {
+            "clients": [{"public_key": "abcd", "state": "VERIFIED"}],
+            "enable_line_switch_off": False,
+        }
+
 
 def _adapter() -> tuple[PowerwallEnergySite, FakeClient]:
     fake = FakeClient()
@@ -188,6 +195,18 @@ async def test_get_backup_events_wraps_payload_under_response() -> None:
         "response": {
             "manual_backup": {"active": True, "duration_seconds": 3600},
             "backup_events": [{"id": "abc", "name": "evt"}],
+        }
+    }
+
+
+async def test_list_authorized_clients_wraps_payload_under_response() -> None:
+    site, fake = _adapter()
+    result = await site.list_authorized_clients()
+    assert ("list_authorized_clients",) in fake.calls
+    assert result == {
+        "response": {
+            "clients": [{"public_key": "abcd", "state": "VERIFIED"}],
+            "enable_line_switch_off": False,
         }
     }
 
@@ -329,7 +348,6 @@ _PLACEHOLDERS: list[tuple[str, tuple[Any, ...]]] = [
     ("check_internet", ()),
     ("set_local_site_config", ()),
     ("get_teg_config", ()),
-    ("list_authorized_clients", ()),
     ("add_authorized_client", ()),
     ("remove_authorized_client", ()),
     ("get_signed_commands_public_key", ()),

@@ -37,6 +37,8 @@ from .exceptions import (
     PowerwallRateLimitError,
 )
 from .models import (
+    AuthorizedClient,
+    AuthorizedClientsPayload,
     BackupEvent,
     BackupEventsPayload,
     ComponentsPayload,
@@ -55,6 +57,8 @@ __all__ = [
     "ISLAND_MODE_OFF_GRID",
     "ISLAND_MODE_ON_GRID",
     "OPERATION_MODES",
+    "AuthorizedClient",
+    "AuthorizedClientsPayload",
     "BackupEvent",
     "BackupEventsPayload",
     "ComponentsPayload",

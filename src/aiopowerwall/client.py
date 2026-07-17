@@ -20,6 +20,7 @@ the library does not cache responses or coalesce concurrent calls.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -36,6 +37,8 @@ from .exceptions import (
     PowerwallProtocolError,
 )
 from .models import (
+    AuthorizedClient,
+    AuthorizedClientsPayload,
     BackupEvent,
     BackupEventsPayload,
     ComponentsPayload,
@@ -97,6 +100,12 @@ def _lookup(data: Any, *keys: str) -> Any:
             return None
         data = data.get(key)
     return data
+
+
+def _enum_suffix(enum_type: Any, value: int, prefix: str) -> str:
+    """Return a protobuf enum value's name with its common ``prefix`` stripped."""
+    name: str = enum_type.Name(value)
+    return name.removeprefix(prefix)
 
 
 class PowerwallClient:
@@ -359,8 +368,10 @@ class PowerwallClient:
 
         # The gateway requires any prior event to be cancelled before a new
         # one is scheduled — even an expired one.
-        await self._send_teg_request(
+        await self._send_command_request(
             din,
+            category="teg",
+            message_cls=combined_pb2.TEGMessages,
             request_field="cancel_manual_backup_event_request",
             response_field="cancel_manual_backup_event_response",
             populate=lambda req: req.SetInParent(),
@@ -375,8 +386,10 @@ class PowerwallClient:
             # MAX_UINT64 — pre-empts any other scheduled event.
             req.scheduling_info.priority = (1 << 64) - 1
 
-        await self._send_teg_request(
+        await self._send_command_request(
             din,
+            category="teg",
+            message_cls=combined_pb2.TEGMessages,
             request_field="schedule_manual_backup_event_request",
             response_field="schedule_manual_backup_event_response",
             populate=populate,
@@ -385,8 +398,10 @@ class PowerwallClient:
     async def cancel_max_backup(self) -> None:
         """Cancel the active manual backup event (no-op if none active)."""
         din = await self.connect()
-        await self._send_teg_request(
+        await self._send_command_request(
             din,
+            category="teg",
+            message_cls=combined_pb2.TEGMessages,
             request_field="cancel_manual_backup_event_request",
             response_field="cancel_manual_backup_event_response",
             populate=lambda req: req.SetInParent(),
@@ -554,8 +569,10 @@ class PowerwallClient:
     async def get_backup_events(self) -> BackupEventsPayload:
         """Return the active manual backup and any scheduled backup events."""
         din = await self.connect()
-        response_envelope = await self._send_teg_request(
+        response_envelope = await self._send_command_request(
             din,
+            category="teg",
+            message_cls=combined_pb2.TEGMessages,
             request_field="get_backup_events_request",
             response_field="get_backup_events_response",
             populate=lambda req: req.SetInParent(),
@@ -586,6 +603,66 @@ class PowerwallClient:
         ]
 
         return {"manual_backup": manual, "backup_events": scheduled}
+
+    async def list_authorized_clients(self) -> AuthorizedClientsPayload:
+        """Return the authorized clients (paired keys) registered with the gateway."""
+        din = await self.connect()
+        response_envelope = await self._send_command_request(
+            din,
+            category="authorization",
+            message_cls=combined_pb2.AuthorizationMessages,
+            request_field="list_authorized_clients_request",
+            response_field="list_authorized_clients_response",
+            populate=lambda req: req.SetInParent(),
+        )
+        clients_resp = response_envelope.authorization.list_authorized_clients_response
+
+        clients: list[AuthorizedClient] = [
+            {
+                "public_key": base64.b64encode(rec.public_key).decode("ascii"),
+                "state": _enum_suffix(
+                    combined_pb2.AuthorizedState, rec.state, "AUTHORIZED_STATE_"
+                ),
+                "type": _enum_suffix(
+                    combined_pb2.AuthorizedClientType,
+                    rec.type,
+                    "AUTHORIZED_CLIENT_TYPE_",
+                ),
+                "description": rec.description,
+                "key_type": _enum_suffix(
+                    combined_pb2.AuthorizedKeyType,
+                    rec.key_type,
+                    "AUTHORIZED_KEY_TYPE_",
+                ),
+                "roles": [
+                    _enum_suffix(
+                        combined_pb2.AuthorizationRole, role, "AUTHORIZATION_ROLE_"
+                    )
+                    for role in rec.roles
+                ],
+                "verification": _enum_suffix(
+                    combined_pb2.AuthorizedVerificationType,
+                    rec.verification,
+                    "AUTHORIZED_VERIFICATION_TYPE_",
+                ),
+                "added_time": (
+                    rec.added_time.seconds if rec.HasField("added_time") else None
+                ),
+                "identifier": (
+                    rec.identifier if rec.HasField("identifier") else None
+                ),
+                "authorized_by_public_key": (
+                    base64.b64encode(rec.authorized_by_public_key).decode("ascii")
+                    if rec.HasField("authorized_by_public_key")
+                    else None
+                ),
+            }
+            for rec in clients_resp.clients
+        ]
+        return {
+            "clients": clients,
+            "enable_line_switch_off": clients_resp.enable_line_switch_off,
+        }
 
     # ── Internals: query builders ───────────────────────────────────────────
 
@@ -769,22 +846,27 @@ class PowerwallClient:
         read_resp = response.filestore.readFileResponse
         return read_resp.file.blob, read_resp.hash
 
-    async def _send_teg_request(
+    async def _send_command_request(
         self,
         din: str,
         *,
+        category: str,
+        message_cls: Any,
         request_field: str,
         response_field: str,
         populate: Any,
         allow_missing_response: bool = False,
     ) -> combined_pb2.MessageEnvelope:
-        """Issue a TEGMessages command and return the response envelope.
+        """Issue a ``MessageEnvelope.<category>`` command and return the response.
 
-        The verbose builder approach (vs. inline construction) keeps the
-        write helpers readable — TEG commands are small and uniform.
+        ``category`` is the ``MessageEnvelope`` oneof field to populate/read
+        (``"teg"``, ``"authorization"``, …) and ``message_cls`` is the
+        corresponding ``*Messages`` class. The verbose builder approach (vs.
+        inline construction) keeps the write helpers readable — these
+        commands are small and uniform.
         """
-        teg = combined_pb2.TEGMessages()
-        populate(getattr(teg, request_field))
+        command = message_cls()
+        populate(getattr(command, request_field))
 
         envelope = combined_pb2.MessageEnvelope()
         envelope.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
@@ -792,7 +874,7 @@ class PowerwallClient:
             combined_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
         )
         envelope.recipient.din = din
-        envelope.teg.CopyFrom(teg)
+        getattr(envelope, category).CopyFrom(command)
 
         try:
             inner = await self._transport.post_v1r(
@@ -809,13 +891,16 @@ class PowerwallClient:
             response.ParseFromString(inner)
         except Exception as err:
             raise PowerwallProtocolError(
-                f"Malformed TEG response: {err}"
+                f"Malformed {category} response: {err}"
             ) from err
-        if not response.HasField("teg") or not response.teg.HasField(response_field):
+        if not response.HasField(category) or not getattr(
+            response, category
+        ).HasField(response_field):
             if allow_missing_response:
                 return response
             _LOGGER.warning(
-                "TEG response missing %s (request=%s inner len=%d hex=%s parsed=%s)",
+                "%s response missing %s (request=%s inner len=%d hex=%s parsed=%s)",
+                category,
                 response_field,
                 request_field,
                 len(inner),
@@ -823,7 +908,7 @@ class PowerwallClient:
                 str(response).replace("\n", " | "),
             )
             raise PowerwallProtocolError(
-                f"TEG response missing {response_field}"
+                f"{category} response missing {response_field}"
             )
         return response
 
