@@ -143,6 +143,27 @@ class PowerwallEnergySite:
         await self._client.set_backup_reserve(backup_reserve_percent)
         return _ok_response()
 
+    async def grid_import_export(
+        self,
+        disallow_charge_from_grid_with_solar_installed: bool | None = None,
+        customer_preferred_export_rule: str | None = None,
+    ) -> dict[str, Any]:
+        """Set the export rule / grid-charge-with-solar policy — maps to
+        :meth:`PowerwallClient.set_grid_import_export`.
+
+        Both settings live under ``site_info`` in the gateway's
+        ``config.json`` alongside ``backup_reserve_percent``, so passing both
+        writes them in a single atomic read-modify-write rather than two
+        separate gateway round-trips.
+        """
+        await self._client.set_grid_import_export(
+            customer_preferred_export_rule=customer_preferred_export_rule,
+            disallow_charge_from_grid_with_solar_installed=(
+                disallow_charge_from_grid_with_solar_installed
+            ),
+        )
+        return _ok_response()
+
     async def set_island_mode(
         self, mode: int, force: bool | None = None
     ) -> dict[str, Any]:
@@ -309,19 +330,6 @@ class PowerwallEnergySite:
         reserve. Falls back to the cloud EnergySite."""
         raise NotImplementedError(
             "off_grid_vehicle_charging_reserve is not implemented locally yet"
-        )
-
-    async def grid_import_export(
-        self,
-        disallow_charge_from_grid_with_solar_installed: bool | None = None,
-        customer_preferred_export_rule: str | None = None,
-    ) -> dict[str, Any]:
-        """TODO: map onto ``config.json`` writes (the export-rule /
-        charge-from-grid keys) once the exact local fields are confirmed. Its
-        semantics differ enough from ``curtail`` that mapping to that would be
-        wrong, so this stays a placeholder and falls back to the cloud."""
-        raise NotImplementedError(
-            "grid_import_export is not implemented locally yet"
         )
 
     async def time_of_use_settings(
