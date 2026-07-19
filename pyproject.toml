@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aiopowerwall"
-version = "0.2.0"
+version = "0.3.0"
 description = "Async Tesla Powerwall 3 client over the TEDAPI v1r RSA-signed LAN protocol."
 readme = "README.md"
 license = "MIT"
