@@ -60,6 +60,11 @@ DEFAULT_GATEWAY_HOST: Final = "192.168.91.1"
 # that a local v1r write of each value sticks and reads back verbatim.
 OPERATION_MODES: Final = ("self_consumption", "autonomous", "backup")
 
+# Accepted values for ``site_info.customer_preferred_export_rule``. Field
+# name and enum confirmed against the sibling jasonacox/pypowerwall project's
+# v1r config-write path (same Tesla local gateway schema).
+GRID_EXPORT_RULES: Final = ("battery_ok", "pv_only", "never")
+
 # setIslandModeRequest mode values used by both PW2 and PW3.
 _ISLAND_MODE_OFF_GRID: Final = 6
 _ISLAND_MODE_ON_GRID: Final = 1
@@ -359,6 +364,50 @@ class PowerwallClient:
                 f"mode must be one of {OPERATION_MODES!r}, got {mode!r}"
             )
         await self.write_config({"default_real_mode": mode})
+
+    async def set_grid_import_export(
+        self,
+        *,
+        customer_preferred_export_rule: str | None = None,
+        disallow_charge_from_grid_with_solar_installed: bool | None = None,
+    ) -> None:
+        """Set the export rule and/or grid-charge-with-solar policy.
+
+        Both fields live under ``site_info`` in ``config.json`` alongside
+        ``backup_reserve_percent``; whichever of the two are given are
+        written in a single read-modify-write, so a caller setting both gets
+        one atomic update instead of two separate gateway round-trips.
+
+        ``customer_preferred_export_rule`` must be one of
+        :data:`GRID_EXPORT_RULES` (``battery_ok``, ``pv_only``, ``never``).
+        Raises :class:`ValueError` for any other value, or if neither
+        parameter is given.
+
+        Mirrors what the Tesla app and Fleet API ``grid_import_export()``
+        set; the Fleet read-back is
+        ``site_info.customer_preferred_export_rule`` /
+        ``site_info.disallow_charge_from_grid_with_solar_installed``.
+        """
+        updates: dict[str, Any] = {}
+        if customer_preferred_export_rule is not None:
+            if customer_preferred_export_rule not in GRID_EXPORT_RULES:
+                raise ValueError(
+                    f"customer_preferred_export_rule must be one of "
+                    f"{GRID_EXPORT_RULES!r}, got {customer_preferred_export_rule!r}"
+                )
+            updates["site_info.customer_preferred_export_rule"] = (
+                customer_preferred_export_rule
+            )
+        if disallow_charge_from_grid_with_solar_installed is not None:
+            updates["site_info.disallow_charge_from_grid_with_solar_installed"] = (
+                bool(disallow_charge_from_grid_with_solar_installed)
+            )
+        if not updates:
+            raise ValueError(
+                "set_grid_import_export requires customer_preferred_export_rule "
+                "and/or disallow_charge_from_grid_with_solar_installed"
+            )
+        await self.write_config(updates)
 
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
         """Schedule a manual "max backup" event (reserve set to 100%)."""
@@ -1101,6 +1150,7 @@ def backup_time_remaining(status: StatusPayload) -> float | None:
 
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
+    "GRID_EXPORT_RULES",
     "OPERATION_MODES",
     "PowerwallClient",
     "backup_time_remaining",

@@ -39,6 +39,20 @@ class FakeClient:
     async def set_backup_reserve(self, percent: float) -> None:
         self.calls.append(("set_backup_reserve", percent))
 
+    async def set_grid_import_export(
+        self,
+        *,
+        customer_preferred_export_rule: str | None = None,
+        disallow_charge_from_grid_with_solar_installed: bool | None = None,
+    ) -> None:
+        self.calls.append(
+            (
+                "set_grid_import_export",
+                customer_preferred_export_rule,
+                disallow_charge_from_grid_with_solar_installed,
+            )
+        )
+
     async def set_island_mode(
         self,
         *,
@@ -123,6 +137,25 @@ async def test_backup_maps_to_set_backup_reserve() -> None:
     site, fake = _adapter()
     result = await site.backup(20)
     assert fake.calls == [("set_backup_reserve", 20)]
+    assert result == _OK
+
+
+async def test_grid_import_export_maps_to_set_grid_import_export() -> None:
+    site, fake = _adapter()
+    result = await site.grid_import_export(
+        disallow_charge_from_grid_with_solar_installed=True,
+        customer_preferred_export_rule="battery_ok",
+    )
+    assert fake.calls == [
+        ("set_grid_import_export", "battery_ok", True)
+    ]
+    assert result == _OK
+
+
+async def test_grid_import_export_export_rule_only() -> None:
+    site, fake = _adapter()
+    result = await site.grid_import_export(customer_preferred_export_rule="never")
+    assert fake.calls == [("set_grid_import_export", "never", None)]
     assert result == _OK
 
 
@@ -332,7 +365,6 @@ def test_site_info_is_absent_on_adapter() -> None:
 _PLACEHOLDERS: list[tuple[str, tuple[Any, ...]]] = [
     ("storm_mode", (True,)),
     ("off_grid_vehicle_charging_reserve", (10,)),
-    ("grid_import_export", ()),
     ("time_of_use_settings", ({},)),
     ("backup_history", ("day",)),
     ("charge_history", ("2026-01-01", "2026-01-31")),

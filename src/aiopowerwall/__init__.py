@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from .client import (
     DEFAULT_GATEWAY_HOST,
+    GRID_EXPORT_RULES,
     OPERATION_MODES,
     PowerwallClient,
     backup_time_remaining,
@@ -54,6 +55,7 @@ __version__ = "0.2.0"
 
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
+    "GRID_EXPORT_RULES",
     "ISLAND_MODE_OFF_GRID",
     "ISLAND_MODE_ON_GRID",
     "OPERATION_MODES",
