@@ -51,7 +51,7 @@ async def main() -> None:
     pem = Path("tedapi_rsa_private.pem").read_bytes()
     async with PowerwallClient(
         host="192.168.91.1",
-        gateway_password="<gateway-password>",
+        gateway_password="<full gateway/WiFi password>",
         rsa_private_key_pem=pem,
     ) as pw:
         await pw.connect()
@@ -63,6 +63,11 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+`gateway_password` is the full gateway/WiFi password - the same value used
+to join the Powerwall's own AP. The gateway's local login only accepts the
+last 5 characters of it; `aiopowerwall` derives that truncation for you, so
+pass the full password.
 
 ## No caching, no coalescing
 

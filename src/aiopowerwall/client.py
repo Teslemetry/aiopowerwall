@@ -6,7 +6,7 @@ Typical use::
 
     async with PowerwallClient(
         host="192.168.91.1",
-        gateway_password="...",
+        gateway_password="<full gateway/WiFi password>",
         rsa_private_key_pem=pem_bytes,
     ) as client:
         await client.connect()
@@ -130,6 +130,13 @@ class PowerwallClient:
         session: aiohttp.ClientSession | None = None,
         timeout: float = 5.0,
     ) -> None:
+        """Create a client.
+
+        ``gateway_password`` is the full gateway/WiFi password (the same
+        value used to join the Powerwall's own AP). The gateway's local
+        login only accepts the last 5 characters of it; that truncation is
+        applied automatically, so pass the full password here.
+        """
         self._owns_session = session is None
         self._session = session or aiohttp.ClientSession()
         self._transport = V1rTransport(

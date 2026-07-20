@@ -62,6 +62,16 @@ Deliberate conventions to preserve:
   — same Tesla local gateway schema, actively maintained, and how the two fields above
   were confirmed.
 
+## v1r local login (`src/aiopowerwall/transport.py`)
+
+`PowerwallClient(gateway_password=...)` takes the **full** gateway/WiFi password.
+`V1rTransport` derives the actual `/api/login/Basic` "customer" password by
+truncating to the last 5 characters (`_customer_password`) - this is a real,
+undocumented Tesla gateway convention (also auto-derived by `jasonacox/pypowerwall`'s
+v1r path), not a library quirk. Do not require callers to pass the pre-truncated
+value; the full password is what's documented (README Quick start,
+constructor docstring) and callers already have it.
+
 ## Extending the TEDAPI proto (`src/aiopowerwall/proto/`)
 
 `tedapi_combined.proto` only checks in the message oneofs actually wired up (e.g.
