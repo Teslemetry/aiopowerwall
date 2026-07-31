@@ -114,6 +114,7 @@ so concurrent callers share one login.
 | `write_config(updates)` | Patch `config.json` (dotted-path mapping) |
 | `set_operation_mode(mode)` | Set `default_real_mode` (`self_consumption`/`autonomous`/`backup`) |
 | `set_tou_mode(mode)` | Set time-of-use optimization mode (`strategy.TOU_mode`, local-only) |
+| `set_grid_import_export(…)` | Set export rule and/or grid-charging policy in one write |
 | `set_export_rule(rule)` | Set grid-export rule (`battery_ok`/`pv_only`/`never`) |
 | `set_on_grid_solar_curtailment(enabled)` | Enable/disable on-grid solar curtailment |
 | `set_grid_charging(enabled)` | Allow/disallow charging the battery from the grid |
@@ -157,7 +158,9 @@ so concurrent callers share one login.
 > battery), `pv_only` (export solar only) or `never` (no export). It is a
 > plain string with no scaling, and `net_meter_mode` is a separate key that is
 > deliberately left untouched (verified independent on PW3: writing the export
-> rule never moves `net_meter_mode`).
+> rule never moves `net_meter_mode`). `set_export_rule` and `set_grid_charging`
+> are single-purpose wrappers over `set_grid_import_export`, which writes both
+> settings in one atomic read-modify-write when you pass both.
 
 > **On-grid solar curtailment.** `set_on_grid_solar_curtailment(enabled)` sets
 > `site_info.on_grid_solar_curtailment_enabled` (boolean, no scaling). The
@@ -249,8 +252,8 @@ Conventions:
   command envelope `{"response": {"code": 201, "message": "", "result": True}}`.
   Data reads (`get_backup_events`, `live_status`, `list_authorized_clients`)
   wrap their payload under `response`.
-- **Implemented locally:** `operation`, `backup`, `set_island_mode`,
-  `go_off_grid`, `reconnect_grid`, `schedule_backup_event`,
+- **Implemented locally:** `operation`, `backup`, `grid_import_export`,
+  `set_island_mode`, `go_off_grid`, `reconnect_grid`, `schedule_backup_event`,
   `cancel_backup_event`, `get_backup_events`, `live_status`, and
   `list_authorized_clients`. Use the `ISLAND_MODE_OFF_GRID` (6) /
   `ISLAND_MODE_ON_GRID` (1) constants with `set_island_mode`.
@@ -273,8 +276,8 @@ Conventions:
   router's health signal.
 - **`site_info` is intentionally absent** so the router falls through to the
   cloud for it. Every other command with no faithful local mapping yet
-  (`storm_mode`, `grid_import_export`, `time_of_use_settings`, the history
-  reads, the gRPC device commands, …) is scaffolded to raise
+  (`storm_mode`, `time_of_use_settings`, the history reads, the gRPC device
+  commands, …) is scaffolded to raise
   `NotImplementedError`, so a per-command-failover router cleanly falls back to
   the cloud until the local path lands.
 

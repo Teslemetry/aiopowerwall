@@ -421,8 +421,8 @@ class PowerwallClient:
         ``site_info.customer_preferred_export_rule`` /
         ``site_info.disallow_charge_from_grid_with_solar_installed``.
 
-        See :meth:`set_export_rule` for a single-purpose wrapper over the
-        export half.
+        See :meth:`set_export_rule` and :meth:`set_grid_charging` for
+        single-purpose wrappers over each half.
         """
         updates: dict[str, Any] = {}
         if customer_preferred_export_rule is not None:
@@ -527,9 +527,13 @@ class PowerwallClient:
             ``set_grid_charging(True)`` the key is **absent** — the gateway
             drops it rather than storing ``false``. Treat a missing key as
             "grid charging allowed".
+
+        Convenience wrapper over the grid-charging half of
+        :meth:`set_grid_import_export`; call that method directly to set the
+        export rule and the grid-charging policy in a single atomic write.
         """
-        await self.write_config(
-            {"site_info.disallow_charge_from_grid_with_solar_installed": not enabled}
+        await self.set_grid_import_export(
+            disallow_charge_from_grid_with_solar_installed=not enabled
         )
 
     async def schedule_max_backup(self, duration_seconds: int = 7200) -> None:
