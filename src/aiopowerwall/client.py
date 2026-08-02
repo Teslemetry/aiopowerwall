@@ -842,6 +842,47 @@ class PowerwallClient:
             "enable_line_switch_off": clients_resp.enable_line_switch_off,
         }
 
+    async def remove_authorized_client(self, public_key: bytes | str) -> None:
+        """Un-pair an authorized client, revoking its access to the gateway.
+
+        ``public_key`` is either the raw DER public key or the base64 string
+        exactly as :meth:`list_authorized_clients` reports it, so a client can
+        be round-tripped straight from that listing.
+
+        Removal is permanent: re-pairing the same key afterwards needs the
+        usual registration and presence-proof flow. Removing the key this
+        client is signing with will lock it out of the gateway.
+
+        The gateway's acknowledgement carries no fields, so a successful call
+        returns ``None``. Faults still raise; call
+        :meth:`list_authorized_clients` afterwards if you need positive
+        confirmation that the record is gone.
+        """
+        key_bytes = (
+            base64.b64decode(public_key)
+            if isinstance(public_key, str)
+            else public_key
+        )
+        if not key_bytes:
+            raise ValueError("public_key must not be empty")
+
+        din = await self.connect()
+
+        def _populate(req: Any) -> None:
+            req.public_key = key_bytes
+
+        await self._send_command_request(
+            din,
+            category="authorization",
+            message_cls=combined_pb2.AuthorizationMessages,
+            request_field="remove_authorized_client_request",
+            response_field="remove_authorized_client_response",
+            populate=_populate,
+            # The response message is empty, so some firmware omits the oneof
+            # entirely rather than sending a present-but-empty member.
+            allow_missing_response=True,
+        )
+
     # ── Internals: query builders ───────────────────────────────────────────
 
     async def _query_graphql(

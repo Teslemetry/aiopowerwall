@@ -113,6 +113,9 @@ class FakeClient:
             "enable_line_switch_off": False,
         }
 
+    async def remove_authorized_client(self, public_key: bytes | str) -> None:
+        self.calls.append(("remove_authorized_client", public_key))
+
 
 def _adapter() -> tuple[PowerwallEnergySite, FakeClient]:
     fake = FakeClient()
@@ -242,6 +245,13 @@ async def test_list_authorized_clients_wraps_payload_under_response() -> None:
             "enable_line_switch_off": False,
         }
     }
+
+
+async def test_remove_authorized_client_delegates_and_returns_ok_envelope() -> None:
+    site, fake = _adapter()
+    result = await site.remove_authorized_client("abcd")
+    assert ("remove_authorized_client", "abcd") in fake.calls
+    assert result == {"response": {"code": 201, "message": "", "result": True}}
 
 
 async def test_connect_if_needed_delegates_to_connect() -> None:
@@ -381,7 +391,6 @@ _PLACEHOLDERS: list[tuple[str, tuple[Any, ...]]] = [
     ("set_local_site_config", ()),
     ("get_teg_config", ()),
     ("add_authorized_client", ()),
-    ("remove_authorized_client", ()),
     ("get_signed_commands_public_key", ()),
 ]
 
