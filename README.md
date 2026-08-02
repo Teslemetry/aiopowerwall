@@ -106,6 +106,7 @@ so concurrent callers share one login.
 | `get_battery_soe_raw()` | Battery SoC percentage (**raw** physical scale) |
 | `get_grid_status()` | Grid status string |
 | `get_backup_events()` | Active and scheduled backup events |
+| `list_authorized_clients()` | Registered client keys, roles, and states |
 
 ### Writes and commands
 
@@ -131,6 +132,16 @@ so concurrent callers share one login.
 | `curtail(reserve_percent=100)` | Stop export via `backup` mode + reserve |
 | `restore_from_curtailment()` | Restore mode + reserve captured by `curtail` |
 | `curtailment_active` (property) | True between `curtail` and `restore_from_curtailment` |
+| `remove_authorized_client(public_key)` | Un-pair a client key, revoking its access |
+
+> **Removing a client key.** `remove_authorized_client` takes either raw DER
+> bytes or the base64 string exactly as `list_authorized_clients` reports it, so
+> a record can be round-tripped straight out of that listing. Note the
+> asymmetry: *adding* a key needs a physical presence proof on the gateway,
+> while removing one needs only an authenticated v1r session — including for a
+> `VERIFIED` record. Removing the key you are signing with will lock this client
+> out. The gateway's acknowledgement carries no fields, so call
+> `list_authorized_clients` afterwards if you need positive confirmation.
 
 > **Islanding.** `set_island_mode` / `go_off_grid` / `reconnect_grid` post a
 > local v1r command that operates the grid contactor. Verified on a Powerwall
@@ -257,10 +268,11 @@ Conventions:
   `cancel_backup_event`, `get_backup_events`, `live_status`, and
   `list_authorized_clients`. Use the `ISLAND_MODE_OFF_GRID` (6) /
   `ISLAND_MODE_ON_GRID` (1) constants with `set_island_mode`.
-- **`list_authorized_clients`** reads the gateway's registered-client list
-  over the local `AuthorizationMessages` v1r command — no cloud round-trip.
-  `add_authorized_client`/`remove_authorized_client` (writes) are not wired up
-  yet and still fall back to the cloud.
+- **`list_authorized_clients`** and **`remove_authorized_client`** both run over
+  the local `AuthorizationMessages` v1r command — no cloud round-trip.
+  `add_authorized_client` is not wired up locally and still falls back to the
+  cloud (registration also needs a physical presence proof, which the local path
+  cannot provide).
 - **`schedule_backup_event`** accepts `start_time`/`priority` for signature
   parity but does **not** honour them — the local event always starts now at
   max priority.

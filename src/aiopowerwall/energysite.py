@@ -309,6 +309,22 @@ class PowerwallEnergySite:
             }
         }
 
+    async def remove_authorized_client(
+        self, public_key: bytes | str
+    ) -> dict[str, Any]:
+        """Un-pair a client key — maps to
+        :meth:`PowerwallClient.remove_authorized_client`.
+
+        ``public_key`` is raw DER bytes or the base64 string as
+        :meth:`list_authorized_clients` reports it.
+
+        The cloud ``EnergySite`` has no counterpart, so there is no signature to
+        mirror here; this follows the ``public_key``-first shape of
+        :meth:`add_authorized_client`.
+        """
+        await self._client.remove_authorized_client(public_key)
+        return _ok_response()
+
     # ── Placeholder commands (no faithful local mapping yet) ────────────────
     #
     # These raise NotImplementedError on purpose: the full command surface is
@@ -457,14 +473,6 @@ class PowerwallEnergySite:
         over v1r."""
         raise NotImplementedError(
             "add_authorized_client is not implemented locally yet"
-        )
-
-    async def remove_authorized_client(
-        self, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        """TODO: wire up key removal over v1r."""
-        raise NotImplementedError(
-            "remove_authorized_client is not implemented locally yet"
         )
 
     async def get_signed_commands_public_key(self) -> dict[str, Any]:
