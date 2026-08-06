@@ -101,6 +101,18 @@ implemented. When wiring up a new command:
   no-op regen of the other still touches the file (version-header/serialization
   format churn) with no functional difference — discard that diff.
 
+## Release workflow (`.github/workflows/release.yml`)
+
+`release.yml` is the top-level, tag-triggered (`v*.*.*`) publish workflow — not a
+reusable `workflow_call` target. The PyPI trusted publisher for this project is
+configured as workflow `release.yml` + environment `pypi`; PEP 740 attestation
+signing checks that the *directly run* workflow's identity matches the publisher
+config. Splitting this into a thin tag-triggered caller + a `workflow_call`
+reusable `release.yml` breaks that match (the reusable workflow signs under a
+different identity) and forces `attestations: false` to work around it. Keep
+`release.yml` as the single top-level workflow; do not reintroduce a caller/callee
+split for this repo's publish path.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
