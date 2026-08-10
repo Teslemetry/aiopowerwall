@@ -54,13 +54,11 @@ Deliberate conventions to preserve:
   `pv_only`/`never`) and/or `site_info.disallow_charge_from_grid_with_solar_installed` in
   one `write_config` call. **Do not route `operation`/`backup`/`grid_import_export` to
   different backends in a router** — they share the same `config.json` document, and
-  splitting them across local/cloud lets one write stomp or race the other (this caused a
-  real regression: the export rule silently stuck at cloud-side `never` after operation
-  mode alone moved to the local path). When a `config.json` field name isn't directly
-  verified against hardware, cross-check it against `jasonacox/pypowerwall`'s v1r write
-  path (`pypowerwall/tedapi/pypowerwall_tedapi.py`, `set_grid_export`/`set_grid_charging`)
-  — same Tesla local gateway schema, actively maintained, and how the two fields above
-  were confirmed.
+  splitting them across local/cloud lets one write stomp or race the other. When a
+  `config.json` field name isn't directly verified against hardware, cross-check it
+  against `jasonacox/pypowerwall`'s v1r write path
+  (`pypowerwall/tedapi/pypowerwall_tedapi.py`, `set_grid_export`/`set_grid_charging`) —
+  same Tesla local gateway schema, actively maintained.
 
 ## v1r local login (`src/aiopowerwall/transport.py`)
 
