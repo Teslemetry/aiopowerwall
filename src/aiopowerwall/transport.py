@@ -27,6 +27,7 @@ from typing import Any, Final
 import aiohttp
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from tesla_protocol.energy_device import signed_message_pb2
 
 from .exceptions import (
     PowerwallAuthenticationError,
@@ -35,19 +36,18 @@ from .exceptions import (
     PowerwallProtocolError,
     PowerwallRateLimitError,
 )
-from .proto import combined_pb2
 
 _LOGGER = logging.getLogger(__name__)
 
-# v1r signature TLV tag identifiers (see tedapi_combined.proto, enum Tag).
-_TAG_SIGNATURE_TYPE: Final = 0
-_TAG_DOMAIN: Final = 1
-_TAG_PERSONALIZATION: Final = 2
-_TAG_EXPIRES_AT: Final = 4
-_TAG_END: Final = 0xFF
+# v1r signature TLV tag identifiers — signed_message_pb2, enum Tag.
+_TAG_SIGNATURE_TYPE: Final = signed_message_pb2.TAG_SIGNATURE_TYPE
+_TAG_DOMAIN: Final = signed_message_pb2.TAG_DOMAIN
+_TAG_PERSONALIZATION: Final = signed_message_pb2.TAG_PERSONALIZATION
+_TAG_EXPIRES_AT: Final = signed_message_pb2.TAG_EXPIRES_AT
+_TAG_END: Final = signed_message_pb2.TAG_END
 
-_SIGNATURE_TYPE_RSA: Final = 7
-_DOMAIN_ENERGY_DEVICE: Final = 7
+_SIGNATURE_TYPE_RSA: Final = signed_message_pb2.SIGNATURE_TYPE_RSA
+_DOMAIN_ENERGY_DEVICE: Final = signed_message_pb2.DOMAIN_ENERGY_DEVICE
 
 # Signed messages must be consumed by the gateway within this window.
 _SIGNATURE_TTL_SECONDS: Final = 12
@@ -196,7 +196,7 @@ class V1rTransport:
 
         `envelope_bytes` is a serialized inner protobuf — typically a
         ``tedapi_pb2.MessageEnvelope`` for GraphQL/firmware queries or a
-        ``combined_pb2.MessageEnvelope`` for FileStore / TEG commands.
+        ``transport_pb2.MessageEnvelope`` for FileStore / TEG commands.
         """
         payload = await self._build_signed_request(envelope_bytes, din)
         url = f"https://{self._host}/tedapi/v1r"
@@ -210,15 +210,15 @@ class V1rTransport:
         # independent — a re-login does not invalidate the signature, so a
         # single retry is sufficient.
         try:
-            response = combined_pb2.RoutableMessage()
+            response = signed_message_pb2.RoutableMessage()
             response.ParseFromString(content)
         except Exception as err:  # protobuf raises generic Exceptions
             raise PowerwallProtocolError(f"Malformed RoutableMessage: {err}") from err
 
         fault = response.signed_message_status.message_fault
-        if fault != combined_pb2.MESSAGEFAULT_ERROR_NONE:
-            fault_name = combined_pb2.MessageFault_E.Name(fault)
-            if fault == combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID:
+        if fault != signed_message_pb2.MESSAGEFAULT_ERROR_NONE:
+            fault_name = signed_message_pb2.MessageFault_E.Name(fault)
+            if fault == signed_message_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID:
                 raise PowerwallAuthenticationError(
                     "RSA key not registered with this Powerwall — pair the public "
                     "key via the Tesla Fleet API before calling v1r endpoints "
@@ -355,8 +355,8 @@ class V1rTransport:
         Signing is offloaded to a thread because RSA-4096 with SHA-512 is
         ~10 ms of CPU work and would otherwise block the event loop.
         """
-        routable = combined_pb2.RoutableMessage()
-        routable.to_destination.domain = combined_pb2.DOMAIN_ENERGY_DEVICE
+        routable = signed_message_pb2.RoutableMessage()
+        routable.to_destination.domain = _DOMAIN_ENERGY_DEVICE
         routable.protobuf_message_as_bytes = envelope_bytes
         routable.uuid = uuid.uuid4().bytes
 

@@ -70,34 +70,41 @@ v1r path), not a library quirk. Do not require callers to pass the pre-truncated
 value; the full password is what's documented (README Quick start,
 constructor docstring) and callers already have it.
 
-## Extending the TEDAPI proto (`src/aiopowerwall/proto/`)
+## TEDAPI protobuf schema: `tesla-protocol` + local `tedapi.proto`
 
-`tedapi_combined.proto` only checks in the message oneofs actually wired up (e.g.
-`TEGMessages` fields 45-50) — other categories (`WCMessages`, `AuthorizationMessages`,
-…) start as `bytes placeholder = 1` stubs until a command in that category is
-implemented. When wiring up a new command:
+The TEG / FileStore / Authorization / signing schema (`transport_pb2`, `teg_api_pb2`,
+`authorization_api_pb2`, `authorization_types_pb2`, `filestore_api_pb2`,
+`signed_message_pb2`) comes from the published `tesla-protocol` PyPI package
+(`tesla_protocol.energy_device`), pinned to an exact version in `pyproject.toml` —
+this library carries no copy of that schema. `src/aiopowerwall/proto/tedapi.proto` /
+`tedapi_pb2.py` is the one schema still checked in locally: it models the older
+`tedapi` package (GraphQL query send/recv, firmware request/response) that
+`tesla-protocol` does not carry an equivalent for.
 
-- The authoritative field numbers/message shapes are Tesla's real schema, published at
-  [`Matthew1471/Tesla-API`](https://github.com/Matthew1471/Tesla-API)
-  (`Documentation/Protobuf/tesla_api/protobuf/energy_device/v1/`) — this checked-in proto
-  already matches it exactly wherever both define the same message (verified for
-  `TEGMessages`, `MessageEnvelope`, `Participant`). Port only the messages/fields the new
-  command needs; leave the rest as `//`-commented oneof entries (mirroring how
-  `TEGMessages` documents unported fields) rather than porting the whole category.
+- **Field names are snake_case in `tesla-protocol`**, not the camelCase some
+  reverse-engineered Tesla protos use (e.g. `delivery_channel`, `authorized_client`,
+  `read_file_request`, not `deliveryChannel`/`authorizedClient`/`readFileRequest`).
+  Field *numbers* are what matter for wire compatibility; verify both name and number
+  against the installed package (`python -c "from tesla_protocol.energy_device import
+  X_pb2; print(X_pb2.Y.DESCRIPTOR.fields_by_name.keys())"`) before wiring up a new
+  message rather than assuming a name from Tesla's other published schemas.
+- **`teg_api_pb2.BackupEvent` field 3 is published as `sheduling_info`** (missing the
+  first "c") in `tesla-protocol==1.3.1` — a real upstream typo, not a local mistake.
+  `PowerwallClient.get_backup_events` deliberately reads `evt.sheduling_info` to match
+  it. If a future `tesla-protocol` release fixes the spelling, bumping the pin will
+  break that attribute access — check this spot first.
 - `PowerwallClient._send_command_request(category=..., message_cls=..., ...)` is the
-  shared helper for any `MessageEnvelope` oneof category (not just `teg`) — reuse it for
-  new categories instead of hand-rolling another `_send_*_request` copy.
-- Regenerate bindings with `protoc --python_out=. tedapi.proto tedapi_combined.proto`
-  from `src/aiopowerwall/proto/` — but pin a `protoc`/`grpcio-tools` version whose
-  emitted gencode version is `<=` the `protobuf` package version actually installed
+  shared helper for any `transport_pb2.MessageEnvelope` oneof category (not just
+  `teg`) — reuse it for new categories instead of hand-rolling another
+  `_send_*_request` copy.
+- Regenerate `tedapi_pb2.py` with `protoc --python_out=. tedapi.proto` from
+  `src/aiopowerwall/proto/` — but pin a `protoc`/`grpcio-tools` version whose emitted
+  gencode version is `<=` the `protobuf` package version actually installed
   (`python -c "import google.protobuf; print(google.protobuf.__version__)"`). The
   latest `grpcio-tools` (via `uvx --from grpcio-tools python -m grpc_tools.protoc`)
   emits gencode that calls `ValidateProtobufRuntimeVersion` and hard-fails at import
   if that check is newer than the installed runtime — `grpcio-tools==1.68.0` (protoc
   ~28, gencode ~5.28) has stayed compatible with this repo's `protobuf>=4.25` floor.
-  Only regenerate the one `_pb2.py` file whose `.proto` you actually changed; a
-  no-op regen of the other still touches the file (version-header/serialization
-  format churn) with no functional difference — discard that diff.
 
 ## Release workflow (`.github/workflows/release.yml`)
 
