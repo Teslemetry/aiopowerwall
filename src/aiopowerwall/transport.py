@@ -39,7 +39,7 @@ from .proto import combined_pb2
 
 _LOGGER = logging.getLogger(__name__)
 
-# v1r signature TLV tag identifiers (see tedapi_combined.proto, enum Tag).
+# v1r signature TLV tag identifiers (see aiopowerwall_tedapi_combined.proto, enum Tag).
 _TAG_SIGNATURE_TYPE: Final = 0
 _TAG_DOMAIN: Final = 1
 _TAG_PERSONALIZATION: Final = 2

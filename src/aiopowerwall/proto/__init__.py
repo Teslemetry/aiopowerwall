@@ -7,12 +7,12 @@ modules typed as `Any` — attribute access is checked at runtime.
 
 To regenerate the bindings:
 
-    protoc --python_out=. tedapi.proto tedapi_combined.proto
+    protoc --python_out=. tedapi.proto aiopowerwall_tedapi_combined.proto
 """
 
 from typing import Any
 
-from . import tedapi_combined_pb2 as _tedapi_combined_pb2
+from . import aiopowerwall_tedapi_combined_pb2 as _tedapi_combined_pb2
 from . import tedapi_pb2 as _tedapi_pb2
 
 # Re-export as Any so callers don't have to suppress attr-defined errors

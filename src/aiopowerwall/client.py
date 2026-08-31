@@ -1135,7 +1135,7 @@ class PowerwallClient:
     #
     # ``setIslandModeRequest`` and ``triggerIslandingBlackStartRequest`` live
     # at ``TEGMessages`` fields 3 and 5 in Tesla's schema — neither is
-    # declared in our checked-in ``tedapi_combined.proto`` (which only models
+    # declared in our checked-in ``aiopowerwall_tedapi_combined.proto`` (which only models
     # the backup-event oneof at fields 45-50). Rather than regenerate the pb2
     # module, we emit raw protobuf wire bytes for the islanding payload and
     # let combined_pb2 handle the outer signing wrapper.

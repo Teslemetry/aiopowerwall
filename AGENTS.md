@@ -72,10 +72,17 @@ constructor docstring) and callers already have it.
 
 ## Extending the TEDAPI proto (`src/aiopowerwall/proto/`)
 
-`tedapi_combined.proto` only checks in the message oneofs actually wired up (e.g.
-`TEGMessages` fields 45-50) — other categories (`WCMessages`, `AuthorizationMessages`,
+`aiopowerwall_tedapi_combined.proto` only checks in the message oneofs actually wired up
+(e.g. `TEGMessages` fields 45-50) — other categories (`WCMessages`, `AuthorizationMessages`,
 …) start as `bytes placeholder = 1` stubs until a command in that category is
-implemented. When wiring up a new command:
+implemented. Its file name and proto package (`aiopowerwall.tedapi_combined`) are
+library-scoped rather than the generic `tedapi_combined` used by other projects that vendor
+the same upstream schema — protobuf's Python runtime registers descriptors in a process-wide
+pool keyed by file name, and a generic name collides across processes that load more than
+one such copy (e.g. a Home Assistant integration pulling in two libraries built from
+independently-named copies of the same schema). Keep both the file name and the package
+library-scoped; renaming only one still collides (a duplicate-symbol error instead of a
+duplicate-file-name one). When wiring up a new command:
 
 - The authoritative field numbers/message shapes are Tesla's real schema, published at
   [`Matthew1471/Tesla-API`](https://github.com/Matthew1471/Tesla-API)
@@ -87,8 +94,9 @@ implemented. When wiring up a new command:
 - `PowerwallClient._send_command_request(category=..., message_cls=..., ...)` is the
   shared helper for any `MessageEnvelope` oneof category (not just `teg`) — reuse it for
   new categories instead of hand-rolling another `_send_*_request` copy.
-- Regenerate bindings with `protoc --python_out=. tedapi.proto tedapi_combined.proto`
-  from `src/aiopowerwall/proto/` — but pin a `protoc`/`grpcio-tools` version whose
+- Regenerate bindings with
+  `protoc --python_out=. tedapi.proto aiopowerwall_tedapi_combined.proto` from
+  `src/aiopowerwall/proto/` — but pin a `protoc`/`grpcio-tools` version whose
   emitted gencode version is `<=` the `protobuf` package version actually installed
   (`python -c "import google.protobuf; print(google.protobuf.__version__)"`). The
   latest `grpcio-tools` (via `uvx --from grpcio-tools python -m grpc_tools.protoc`)

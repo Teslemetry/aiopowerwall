@@ -1,10 +1,16 @@
 // Combined Tesla TEDAPI Protocol Buffer Definition
 // Combines tesla_signed.proto and tedapi_nexarian.proto into one file
 //
-// Create Python bindings:
-//     protoc --python_out=. tedapi_combined.proto
+// The file name and package are scoped to this library (rather than the
+// generic "tedapi_combined") because protobuf's Python runtime registers
+// descriptors in a process-wide pool keyed by file name; a generic name
+// collides with other libraries that vendor the same upstream schema under
+// their own copy of it.
 //
-// This will generate: tedapi_combined_pb2.py
+// Create Python bindings:
+//     protoc --python_out=. aiopowerwall_tedapi_combined.proto
+//
+// This will generate: aiopowerwall_tedapi_combined_pb2.py
 //
 // Credits:
 // - @Matthew1471's Tesla-API repository (signing protocol)
@@ -12,7 +18,7 @@
 
 syntax = "proto3";
 
-package tedapi_combined;
+package aiopowerwall.tedapi_combined;
 
 import "google/protobuf/timestamp.proto";
 
