@@ -30,6 +30,13 @@ from typing import Any, Final, cast
 
 import aiohttp
 from google.protobuf.timestamp_pb2 import Timestamp
+from tesla_protocol.energy_device import (
+    authorization_api_pb2,
+    authorization_types_pb2,
+    filestore_api_pb2,
+    teg_api_pb2,
+    transport_pb2,
+)
 
 from . import queries
 from .exceptions import (
@@ -48,7 +55,7 @@ from .models import (
     ManualBackupInfo,
     StatusPayload,
 )
-from .proto import combined_pb2, tedapi_pb2
+from .proto import tedapi_pb2
 from .transport import V1rTransport
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,8 +102,9 @@ _SOC_OFFSET: Final = 5.0
 _WT_VARINT: Final = 0
 _WT_LEN: Final = 2
 
-# Field numbers within TEGMessages for islanding commands (verbatim from
-# the Tesla protobuf schema, not present in our checked-in combined.proto).
+# Field numbers within TEGMessages for islanding commands, encoded by hand
+# instead of via teg_api_pb2 to keep this narrow write path independent of
+# the full oneof surface (which carries dozens of unrelated commands).
 _TEG_FIELD_SET_ISLAND_MODE_REQUEST: Final = 3
 _TEG_FIELD_TRIGGER_ISLANDING_REQUEST: Final = 5
 
@@ -302,15 +310,14 @@ class PowerwallClient:
         for dotted_path, value in updates.items():
             self._apply_dotted_update(config, dotted_path, value)
 
-        write_msg = combined_pb2.Message()
-        envelope = write_msg.message
-        envelope.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
-        envelope.sender.authorizedClient = (
-            combined_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
+        envelope = transport_pb2.MessageEnvelope()
+        envelope.delivery_channel = transport_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
+        envelope.sender.authorized_client = (
+            authorization_types_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
         )
         envelope.recipient.din = din
-        update_req = envelope.filestore.updateFileRequest
-        update_req.domain = combined_pb2.FILE_STORE_API_DOMAIN_CONFIG_JSON
+        update_req = envelope.filestore.update_file_request
+        update_req.domain = filestore_api_pb2.FILE_STORE_API_DOMAIN_CONFIG_JSON
         update_req.file.name = "config.json"
         update_req.file.blob = json.dumps(config).encode("utf-8")
         update_req.hash = current_hash
@@ -318,7 +325,7 @@ class PowerwallClient:
         inner = await self._transport.post_v1r(
             envelope.SerializeToString(), din
         )
-        response = combined_pb2.MessageEnvelope()
+        response = transport_pb2.MessageEnvelope()
         try:
             response.ParseFromString(inner)
         except Exception as err:
@@ -547,7 +554,7 @@ class PowerwallClient:
         await self._send_command_request(
             din,
             category="teg",
-            message_cls=combined_pb2.TEGMessages,
+            message_cls=teg_api_pb2.TEGMessages,
             request_field="cancel_manual_backup_event_request",
             response_field="cancel_manual_backup_event_response",
             populate=lambda req: req.SetInParent(),
@@ -565,7 +572,7 @@ class PowerwallClient:
         await self._send_command_request(
             din,
             category="teg",
-            message_cls=combined_pb2.TEGMessages,
+            message_cls=teg_api_pb2.TEGMessages,
             request_field="schedule_manual_backup_event_request",
             response_field="schedule_manual_backup_event_response",
             populate=populate,
@@ -577,7 +584,7 @@ class PowerwallClient:
         await self._send_command_request(
             din,
             category="teg",
-            message_cls=combined_pb2.TEGMessages,
+            message_cls=teg_api_pb2.TEGMessages,
             request_field="cancel_manual_backup_event_request",
             response_field="cancel_manual_backup_event_response",
             populate=lambda req: req.SetInParent(),
@@ -750,7 +757,7 @@ class PowerwallClient:
         response_envelope = await self._send_command_request(
             din,
             category="teg",
-            message_cls=combined_pb2.TEGMessages,
+            message_cls=teg_api_pb2.TEGMessages,
             request_field="get_backup_events_request",
             response_field="get_backup_events_response",
             populate=lambda req: req.SetInParent(),
@@ -773,9 +780,11 @@ class PowerwallClient:
             {
                 "id": evt.id,
                 "name": evt.name,
-                "start_time": evt.scheduling_info.start_time.seconds,
-                "duration_seconds": evt.scheduling_info.duration_seconds,
-                "priority": evt.scheduling_info.priority,
+                # `sheduling_info` (sic) — teg_api_pb2.BackupEvent field 3 is
+                # published under that misspelling in tesla-protocol 1.3.1.
+                "start_time": evt.sheduling_info.start_time.seconds,
+                "duration_seconds": evt.sheduling_info.duration_seconds,
+                "priority": evt.sheduling_info.priority,
             }
             for evt in events_resp.backup_events
         ]
@@ -788,7 +797,7 @@ class PowerwallClient:
         response_envelope = await self._send_command_request(
             din,
             category="authorization",
-            message_cls=combined_pb2.AuthorizationMessages,
+            message_cls=authorization_api_pb2.AuthorizationMessages,
             request_field="list_authorized_clients_request",
             response_field="list_authorized_clients_response",
             populate=lambda req: req.SetInParent(),
@@ -799,27 +808,27 @@ class PowerwallClient:
             {
                 "public_key": base64.b64encode(rec.public_key).decode("ascii"),
                 "state": _enum_suffix(
-                    combined_pb2.AuthorizedState, rec.state, "AUTHORIZED_STATE_"
+                    authorization_types_pb2.AuthorizedState, rec.state, "AUTHORIZED_STATE_"
                 ),
                 "type": _enum_suffix(
-                    combined_pb2.AuthorizedClientType,
+                    authorization_types_pb2.AuthorizedClientType,
                     rec.type,
                     "AUTHORIZED_CLIENT_TYPE_",
                 ),
                 "description": rec.description,
                 "key_type": _enum_suffix(
-                    combined_pb2.AuthorizedKeyType,
+                    authorization_types_pb2.AuthorizedKeyType,
                     rec.key_type,
                     "AUTHORIZED_KEY_TYPE_",
                 ),
                 "roles": [
                     _enum_suffix(
-                        combined_pb2.AuthorizationRole, role, "AUTHORIZATION_ROLE_"
+                        authorization_types_pb2.AuthorizationRole, role, "AUTHORIZATION_ROLE_"
                     )
                     for role in rec.roles
                 ],
                 "verification": _enum_suffix(
-                    combined_pb2.AuthorizedVerificationType,
+                    authorization_types_pb2.AuthorizedVerificationType,
                     rec.verification,
                     "AUTHORIZED_VERIFICATION_TYPE_",
                 ),
@@ -874,7 +883,7 @@ class PowerwallClient:
         await self._send_command_request(
             din,
             category="authorization",
-            message_cls=combined_pb2.AuthorizationMessages,
+            message_cls=authorization_api_pb2.AuthorizationMessages,
             request_field="remove_authorized_client_request",
             response_field="remove_authorized_client_response",
             populate=_populate,
@@ -1028,22 +1037,21 @@ class PowerwallClient:
 
     async def _read_filestore(self, din: str, name: str) -> tuple[bytes, bytes]:
         """Issue a FileStore read request and return ``(blob, hash)``."""
-        msg = combined_pb2.Message()
-        envelope = msg.message
-        envelope.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
-        envelope.sender.authorizedClient = (
-            combined_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
+        envelope = transport_pb2.MessageEnvelope()
+        envelope.delivery_channel = transport_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
+        envelope.sender.authorized_client = (
+            authorization_types_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
         )
         envelope.recipient.din = din
-        envelope.filestore.readFileRequest.domain = (
-            combined_pb2.FILE_STORE_API_DOMAIN_CONFIG_JSON
+        envelope.filestore.read_file_request.domain = (
+            filestore_api_pb2.FILE_STORE_API_DOMAIN_CONFIG_JSON
         )
-        envelope.filestore.readFileRequest.name = name
+        envelope.filestore.read_file_request.name = name
 
         inner = await self._transport.post_v1r(
             envelope.SerializeToString(), din
         )
-        response = combined_pb2.MessageEnvelope()
+        response = transport_pb2.MessageEnvelope()
         try:
             response.ParseFromString(inner)
         except Exception as err:
@@ -1062,7 +1070,7 @@ class PowerwallClient:
             raise PowerwallProtocolError(
                 "FileStore response missing filestore payload"
             )
-        read_resp = response.filestore.readFileResponse
+        read_resp = response.filestore.read_file_response
         return read_resp.file.blob, read_resp.hash
 
     async def _send_command_request(
@@ -1075,7 +1083,7 @@ class PowerwallClient:
         response_field: str,
         populate: Any,
         allow_missing_response: bool = False,
-    ) -> combined_pb2.MessageEnvelope:
+    ) -> transport_pb2.MessageEnvelope:
         """Issue a ``MessageEnvelope.<category>`` command and return the response.
 
         ``category`` is the ``MessageEnvelope`` oneof field to populate/read
@@ -1087,10 +1095,10 @@ class PowerwallClient:
         command = message_cls()
         populate(getattr(command, request_field))
 
-        envelope = combined_pb2.MessageEnvelope()
-        envelope.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
-        envelope.sender.authorizedClient = (
-            combined_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
+        envelope = transport_pb2.MessageEnvelope()
+        envelope.delivery_channel = transport_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
+        envelope.sender.authorized_client = (
+            authorization_types_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
         )
         envelope.recipient.din = din
         getattr(envelope, category).CopyFrom(command)
@@ -1102,10 +1110,10 @@ class PowerwallClient:
         except PowerwallError:
             if allow_missing_response:
                 # cancel-on-empty: tolerate "nothing to cancel" responses.
-                return combined_pb2.MessageEnvelope()
+                return transport_pb2.MessageEnvelope()
             raise
 
-        response = combined_pb2.MessageEnvelope()
+        response = transport_pb2.MessageEnvelope()
         try:
             response.ParseFromString(inner)
         except Exception as err:
@@ -1134,11 +1142,9 @@ class PowerwallClient:
     # ── Internals: hand-rolled wire encoders for islanding commands ─────────
     #
     # ``setIslandModeRequest`` and ``triggerIslandingBlackStartRequest`` live
-    # at ``TEGMessages`` fields 3 and 5 in Tesla's schema — neither is
-    # declared in our checked-in ``tedapi_combined.proto`` (which only models
-    # the backup-event oneof at fields 45-50). Rather than regenerate the pb2
-    # module, we emit raw protobuf wire bytes for the islanding payload and
-    # let combined_pb2 handle the outer signing wrapper.
+    # at ``TEGMessages`` fields 3 and 5. This path emits raw protobuf wire
+    # bytes for the islanding payload directly, independent of the
+    # ``teg_api_pb2``/``transport_pb2`` message classes used elsewhere.
 
     @staticmethod
     def _varint(value: int) -> bytes:
@@ -1183,17 +1189,17 @@ class PowerwallClient:
         """Encode a MessageEnvelope carrying ``teg_payload`` as the oneof.
 
         Mirrors the layout we'd otherwise build with
-        ``combined_pb2.MessageEnvelope`` — ``deliveryChannel=HERMES_COMMAND``,
-        ``sender.authorizedClient=CUSTOMER_MOBILE_APP``,
+        ``transport_pb2.MessageEnvelope`` — ``delivery_channel=HERMES_COMMAND``,
+        ``sender.authorized_client=CUSTOMER_MOBILE_APP``,
         ``recipient.din=<din>`` — except the ``teg`` payload is supplied as
-        raw bytes since our pb2 doesn't model the islanding fields.
+        raw bytes since this path doesn't build a ``TEGMessages``.
         """
-        # Participant.sender — oneof id, field 4 = authorizedClient (varint).
+        # Participant.sender — oneof id, field 4 = authorized_client (varint).
         sender = cls._field_varint(4, 1)
         # Participant.recipient — oneof id, field 1 = din (string).
         recipient = cls._field_string(1, din)
         return (
-            cls._field_varint(1, 2)  # deliveryChannel = HERMES_COMMAND
+            cls._field_varint(1, 2)  # delivery_channel = HERMES_COMMAND
             + cls._field_bytes(2, sender)
             + cls._field_bytes(3, recipient)
             + cls._field_bytes(5, teg_payload)  # MessageEnvelope.teg
