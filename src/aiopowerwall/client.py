@@ -595,15 +595,13 @@ class PowerwallClient:
         self,
         *,
         off_grid: bool,
-        force: bool = True,
+        force: bool = False,
         mode_override: int | None = None,
     ) -> None:
         """Send a ``setIslandModeRequest`` to the gateway via local v1r.
 
         ``mode=6`` requests off-grid (contactor open); ``mode=1`` requests
-        grid reconnect. ``force=True`` is required on off-grid — without it
-        the gateway acknowledges the message but does not operate the
-        contactor.
+        grid reconnect. ``force=True`` is required for some Powerwalls.
 
         .. note:: Verified on a Powerwall 3 gateway that this local v1r
             command **does** operate the contactor — ``go_off_grid`` opened it
