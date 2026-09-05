@@ -7,8 +7,6 @@ on:
 
 env:
   PYTHON_VERSION: "3.13"
-  PYPI_PROJECT_URL: https://pypi.org/p/aiopowerwall
-  ENVIRONMENT_NAME: pypi
 
 jobs:
   gate:
@@ -58,8 +56,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: ${{ env.ENVIRONMENT_NAME }}
-      url: ${{ env.PYPI_PROJECT_URL }}
+      name: pypi
+      url: https://pypi.org/p/aiopowerwall
     permissions:
       id-token: write
     steps:
