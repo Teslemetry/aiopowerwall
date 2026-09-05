@@ -265,8 +265,8 @@ Conventions:
   wrap their payload under `response`.
 - **Implemented locally:** `operation`, `backup`, `grid_import_export`,
   `set_island_mode`, `go_off_grid`, `reconnect_grid`, `schedule_backup_event`,
-  `cancel_backup_event`, `get_backup_events`, `live_status`, and
-  `list_authorized_clients`. Use the `ISLAND_MODE_OFF_GRID` (6) /
+  `cancel_backup_event`, `get_backup_events`, `live_status`, `local_config`,
+  and `list_authorized_clients`. Use the `ISLAND_MODE_OFF_GRID` (6) /
   `ISLAND_MODE_ON_GRID` (1) constants with `set_island_mode`.
 - **`list_authorized_clients`** and **`remove_authorized_client`** both run over
   the local `AuthorizationMessages` v1r command — no cloud round-trip.
@@ -283,6 +283,9 @@ Conventions:
   `control.systemStatus`. Cloud keys with no local v1r equivalent
   (`backup_capable`, `grid_services_*`, `storm_mode_active`, `timestamp`,
   `wall_connectors`) are returned as `None` rather than guessed.
+- **`local_config`** returns at most `backup_reserve_percent` (scaled via
+  `raw_to_scaled_reserve`) and `default_real_mode` from `get_config()`,
+  omitting a key when its source is absent from the local config document.
 - **`connect_if_needed`** is an extra (not part of the cloud `EnergySite`
   surface): it delegates to `PowerwallClient.connect` and serves as the
   router's health signal.
