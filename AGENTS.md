@@ -53,9 +53,10 @@ pass the pre-truncated value.
 ## TEDAPI protobuf schema: `tesla-protocol` + local `tedapi.proto`
 
 The TEG / FileStore / Authorization / signing schema comes from the `tesla-protocol`
-PyPI package (`tesla_protocol.energy_device`), pinned exactly in `pyproject.toml`; this
-repo carries no copy. `src/aiopowerwall/proto/tedapi.proto` / `tedapi_pb2.py` is the
-one locally checked-in schema (older `tedapi` package: GraphQL send/recv, firmware
+PyPI package (`tesla_protocol.energy_device`), range-pinned in `pyproject.toml` (kept
+wide so this package can coexist with `tesla-fleet-api`'s own `tesla-protocol` floor);
+this repo carries no copy. `src/aiopowerwall/proto/tedapi.proto` / `tedapi_pb2.py` is
+the one locally checked-in schema (older `tedapi` package: GraphQL send/recv, firmware
 request/response) that `tesla-protocol` has no equivalent for.
 
 - **Field names are snake_case in `tesla-protocol`** (`delivery_channel`,
@@ -64,9 +65,14 @@ request/response) that `tesla-protocol` has no equivalent for.
   package before wiring a new message:
   `python -c "from tesla_protocol.energy_device import X_pb2; print(X_pb2.Y.DESCRIPTOR.fields_by_name.keys())"`.
 - **`teg_api_pb2.BackupEvent` field 3 is published as `sheduling_info`** (sic) — an
-  upstream typo. `PowerwallClient.get_backup_events` reads `evt.sheduling_info` on
-  purpose. If a future `tesla-protocol` release fixes the spelling, bumping the pin
-  breaks that attribute access — check there first.
+  upstream typo, unchanged through 2.0.0. `PowerwallClient.get_backup_events` reads
+  `evt.sheduling_info` on purpose. `tests/test_tesla_protocol_compat.py` is the canary:
+  it asserts every `tesla_protocol` field/enum this package depends on (this typo
+  included) by descriptor lookup, so a future release that renames or drops one fails
+  there instead of at a gateway call. Before widening the pin's upper bound, install the
+  new ceiling version and rerun that test — if the typo is fixed, switch
+  `evt.sheduling_info` to a descriptor-based lookup that tries both spellings instead of
+  pinning back.
 - `PowerwallClient._send_command_request(category=..., message_cls=..., ...)` is the
   shared helper for any `MessageEnvelope` oneof category; reuse it instead of adding
   another `_send_*_request` copy.
