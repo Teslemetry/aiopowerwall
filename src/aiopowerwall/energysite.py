@@ -25,6 +25,9 @@ Design notes:
   back to the cloud ``EnergySite`` until the local path lands.
 * :meth:`site_info` is deliberately **absent** — the router should always fall
   through to the cloud for it (we do not try to replicate it locally).
+  :meth:`local_config` is a separate, additive accessor that surfaces just the
+  ``backup_reserve_percent``/``default_real_mode`` subset of the local config
+  document that already has a faithful cloud mapping.
 * :meth:`connect_if_needed` is a router health signal (not part of the cloud
   ``EnergySite`` surface): the router's default health check feature-detects it
   to decide whether the local primary is reachable.
@@ -35,7 +38,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from .client import PowerwallClient, battery_level
+from .client import PowerwallClient, battery_level, raw_to_scaled_reserve
 
 # Island-mode wire values (mirror ``tesla_fleet_api.const.EnergyIslandMode`` by
 # convention — we do not import it). Mode 6 opens the grid contactor
@@ -291,6 +294,28 @@ class PowerwallEnergySite:
                 "wall_connectors": None,
             }
         }
+
+    async def local_config(self) -> dict[str, Any]:
+        """Return a partial, cloud-shaped subset of ``config.json``.
+
+        Maps to :meth:`PowerwallClient.get_config`. Unlike :meth:`site_info`
+        (deliberately absent — see the module docstring), this exposes only
+        the two fields that already have a faithful cloud mapping:
+        ``backup_reserve_percent`` (scaled via
+        :func:`~aiopowerwall.client.raw_to_scaled_reserve`) and
+        ``default_real_mode``. A key is omitted, never guessed, when its
+        source is absent from the local config document.
+        """
+        config = await self._client.get_config()
+        result: dict[str, Any] = {}
+        site_info = config.get("site_info")
+        if isinstance(site_info, Mapping) and "backup_reserve_percent" in site_info:
+            result["backup_reserve_percent"] = raw_to_scaled_reserve(
+                site_info["backup_reserve_percent"]
+            )
+        if "default_real_mode" in config:
+            result["default_real_mode"] = config["default_real_mode"]
+        return result
 
     async def list_authorized_clients(self) -> dict[str, Any]:
         """Return the authorized clients (paired keys) registered with the gateway.

@@ -5,7 +5,8 @@ These exercise :class:`PowerwallEnergySite` against a hand-rolled fake
 that each implemented command maps to the right client call and returns the
 cloud command envelope, that placeholder commands raise ``NotImplementedError``,
 that ``site_info`` is absent (so a router falls through to the cloud), and that
-``live_status`` produces the expected cloud-shaped keys from mocked local data.
+``live_status``/``local_config`` produce the expected cloud-shaped keys from
+mocked local data.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Any, cast
 import pytest
 
 from aiopowerwall import PowerwallClient
+from aiopowerwall.client import raw_to_scaled_reserve
 from aiopowerwall.energysite import (
     ISLAND_MODE_OFF_GRID,
     ISLAND_MODE_ON_GRID,
@@ -27,6 +29,10 @@ class FakeClient:
 
     def __init__(self) -> None:
         self.calls: list[tuple[Any, ...]] = []
+        self.config: dict[str, Any] = {
+            "site_info": {"backup_reserve_percent": 25.0},
+            "default_real_mode": "self_consumption",
+        }
 
     # writes / commands -----------------------------------------------------
     async def connect(self) -> str:
@@ -105,6 +111,10 @@ class FakeClient:
 
     async def get_grid_status(self) -> str:
         return "SystemGridConnected"
+
+    async def get_config(self) -> dict[str, Any]:
+        self.calls.append(("get_config",))
+        return self.config
 
     async def list_authorized_clients(self) -> dict[str, Any]:
         self.calls.append(("list_authorized_clients",))
@@ -360,6 +370,48 @@ async def test_live_status_unknown_grid_status_falls_back() -> None:
     payload = (await site.live_status())["response"]
     assert payload["grid_status"] == "Unknown"
     assert payload["island_status"] == "island_status_unknown"
+
+
+# ── local_config ─────────────────────────────────────────────────────────────
+
+
+async def test_local_config_returns_both_keys_scaled() -> None:
+    site, fake = _adapter()
+    fake.config = {
+        "site_info": {"backup_reserve_percent": 25.0},
+        "default_real_mode": "self_consumption",
+    }
+    result = await site.local_config()
+    assert result == {
+        "backup_reserve_percent": raw_to_scaled_reserve(25.0),
+        "default_real_mode": "self_consumption",
+    }
+    assert set(result) == {"backup_reserve_percent", "default_real_mode"}
+
+
+async def test_local_config_omits_missing_backup_reserve_percent() -> None:
+    site, fake = _adapter()
+    fake.config = {
+        "site_info": {},
+        "default_real_mode": "self_consumption",
+    }
+    result = await site.local_config()
+    assert result == {"default_real_mode": "self_consumption"}
+
+
+async def test_local_config_omits_missing_default_real_mode() -> None:
+    site, fake = _adapter()
+    fake.config = {"site_info": {"backup_reserve_percent": 25.0}}
+    result = await site.local_config()
+    assert "default_real_mode" not in result
+    assert result["backup_reserve_percent"] == raw_to_scaled_reserve(25.0)
+
+
+async def test_local_config_empty_when_no_source_present() -> None:
+    site, fake = _adapter()
+    fake.config = {}
+    result = await site.local_config()
+    assert result == {}
 
 
 # ── site_info is deliberately absent ─────────────────────────────────────────
