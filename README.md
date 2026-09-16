@@ -266,13 +266,23 @@ Conventions:
 - **Implemented locally:** `operation`, `backup`, `grid_import_export`,
   `set_island_mode`, `go_off_grid`, `reconnect_grid`, `schedule_backup_event`,
   `cancel_backup_event`, `get_backup_events`, `live_status`, `local_config`,
-  and `list_authorized_clients`. Use the `ISLAND_MODE_OFF_GRID` (6) /
-  `ISLAND_MODE_ON_GRID` (1) constants with `set_island_mode`.
-- **`list_authorized_clients`** and **`remove_authorized_client`** both run over
-  the local `AuthorizationMessages` v1r command — no cloud round-trip.
-  `add_authorized_client` is not wired up locally and still falls back to the
-  cloud (registration also needs a physical presence proof, which the local path
-  cannot provide).
+  `list_authorized_clients`, and `find_authorized_clients`. Use the
+  `ISLAND_MODE_OFF_GRID` (6) / `ISLAND_MODE_ON_GRID` (1) constants with
+  `set_island_mode`.
+- **`list_authorized_clients`**, **`find_authorized_clients`**, and
+  **`remove_authorized_client`** all run over the local `AuthorizationMessages`
+  v1r command — no cloud round-trip. `add_authorized_client` is not wired up
+  locally and still falls back to the cloud (registration also needs a
+  physical presence proof, which the local path cannot provide).
+- **`find_authorized_clients(raw=False)`** parses `list_authorized_clients`'s
+  payload into `AuthorizedClients`/`AuthorizedClient` (from
+  `aiopowerwall.authorized_clients`, also re-exported from `aiopowerwall`),
+  field-for-field aligned with
+  `tesla_fleet_api.teslemetry.energysite.TeslemetryEnergySite.find_authorized_clients`
+  so a caller needs no local/cloud conversion. Pass `raw=True` for the
+  unparsed dict `list_authorized_clients` returns. An unrecognized `state`
+  (e.g. from newer gateway firmware) is never dropped or raised on — it comes
+  through as the raw int, matching `tesla_fleet_api`'s own fallback.
 - **`schedule_backup_event`** accepts `start_time`/`priority` for signature
   parity but does **not** honour them — the local event always starts now at
   max priority.

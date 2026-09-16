@@ -38,6 +38,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from .authorized_clients import AuthorizedClients, parse_authorized_clients
 from .client import PowerwallClient, battery_level, raw_to_scaled_reserve
 
 # Island-mode wire values (mirror ``tesla_fleet_api.const.EnergyIslandMode`` by
@@ -320,11 +321,12 @@ class PowerwallEnergySite:
     async def list_authorized_clients(self) -> dict[str, Any]:
         """Return the authorized clients (paired keys) registered with the gateway.
 
-        Maps to :meth:`PowerwallClient.list_authorized_clients` and wraps the
-        local payload under ``response``. ``clients`` matches one of the two
-        keys the cloud envelope is observed to use (the other being
+        This is the raw form. Maps to :meth:`PowerwallClient.list_authorized_clients`
+        and wraps the local payload under ``response``. ``clients`` matches one
+        of the two keys the cloud envelope is observed to use (the other being
         ``authorized_clients``), so a caller parsing either shape works
-        unchanged against this local read.
+        unchanged against this local read. Prefer :meth:`find_authorized_clients`
+        for a typed result aligned with ``TeslemetryEnergySite``.
         """
         payload = await self._client.list_authorized_clients()
         return {
@@ -333,6 +335,23 @@ class PowerwallEnergySite:
                 "enable_line_switch_off": payload.get("enable_line_switch_off"),
             }
         }
+
+    async def find_authorized_clients(
+        self, raw: bool = False
+    ) -> AuthorizedClients | dict[str, Any]:
+        """List authorized clients, parsed into a typed result by default.
+
+        Mirrors
+        ``tesla_fleet_api.teslemetry.energysite.TeslemetryEnergySite.find_authorized_clients``'s
+        shape field-for-field (:class:`~aiopowerwall.authorized_clients.AuthorizedClients`,
+        :class:`~aiopowerwall.authorized_clients.AuthorizedClient`) so a caller
+        needs no local-vs-cloud conversion. Pass ``raw=True`` to get the
+        unparsed dict :meth:`list_authorized_clients` returns instead.
+        """
+        payload = await self.list_authorized_clients()
+        if raw:
+            return payload
+        return parse_authorized_clients(payload["response"])
 
     async def remove_authorized_client(
         self, public_key: bytes | str

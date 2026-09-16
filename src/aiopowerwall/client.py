@@ -117,9 +117,18 @@ def _lookup(data: Any, *keys: str) -> Any:
     return data
 
 
-def _enum_suffix(enum_type: Any, value: int, prefix: str) -> str:
-    """Return a protobuf enum value's name with its common ``prefix`` stripped."""
-    name: str = enum_type.Name(value)
+def _enum_suffix(enum_type: Any, value: int, prefix: str) -> str | int:
+    """Return a protobuf enum value's name with its common ``prefix`` stripped.
+
+    A gateway firmware newer than this package's ``tesla-protocol`` pin can
+    report an enum number with no matching name; ``enum_type.Name()`` raises
+    ``ValueError`` for that case, so this returns the raw int unchanged
+    instead of letting an unrecognized value break the whole read.
+    """
+    try:
+        name: str = enum_type.Name(value)
+    except ValueError:
+        return value
     return name.removeprefix(prefix)
 
 
