@@ -269,12 +269,6 @@ async def test_find_authorized_clients_returns_typed_result() -> None:
     assert client.raw == {"public_key": "abcd", "state": "VERIFIED"}
 
 
-async def test_find_authorized_clients_raw_matches_list_authorized_clients() -> None:
-    site, _fake = _adapter()
-    raw_result = await site.find_authorized_clients(raw=True)
-    assert raw_result == await site.list_authorized_clients()
-
-
 async def test_find_authorized_clients_unknown_state_is_not_dropped() -> None:
     site, _fake = _adapter()
 

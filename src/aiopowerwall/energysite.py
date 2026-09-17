@@ -336,21 +336,17 @@ class PowerwallEnergySite:
             }
         }
 
-    async def find_authorized_clients(
-        self, raw: bool = False
-    ) -> AuthorizedClients | dict[str, Any]:
-        """List authorized clients, parsed into a typed result by default.
+    async def find_authorized_clients(self) -> AuthorizedClients:
+        """List authorized clients, parsed into a typed result.
 
         Mirrors
         ``tesla_fleet_api.teslemetry.energysite.TeslemetryEnergySite.find_authorized_clients``'s
         shape field-for-field (:class:`~aiopowerwall.authorized_clients.AuthorizedClients`,
         :class:`~aiopowerwall.authorized_clients.AuthorizedClient`) so a caller
-        needs no local-vs-cloud conversion. Pass ``raw=True`` to get the
-        unparsed dict :meth:`list_authorized_clients` returns instead.
+        needs no local-vs-cloud conversion. Use :meth:`list_authorized_clients`
+        for the unparsed raw form.
         """
         payload = await self.list_authorized_clients()
-        if raw:
-            return payload
         return parse_authorized_clients(payload["response"])
 
     async def remove_authorized_client(
