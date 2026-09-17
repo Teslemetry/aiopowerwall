@@ -46,15 +46,23 @@ class BackupEventsPayload(TypedDict, total=False):
 
 
 class AuthorizedClient(TypedDict, total=False):
-    """One registered client entry from `list_authorized_clients()`."""
+    """One registered client entry from `list_authorized_clients()`.
+
+    This is the raw form: enum fields are the gateway's enum name with its
+    common prefix stripped (e.g. ``"VERIFIED"``), falling back to the raw
+    int for a value newer than this package's `tesla-protocol` pin knows
+    the name of. See
+    :meth:`~aiopowerwall.energysite.PowerwallEnergySite.find_authorized_clients`
+    for a typed, tesla-fleet-api-aligned alternative.
+    """
 
     public_key: str
-    state: str
-    type: str
+    state: str | int
+    type: str | int
     description: str
-    key_type: str
-    roles: list[str]
-    verification: str
+    key_type: str | int
+    roles: list[str | int]
+    verification: str | int
     added_time: int | None
     identifier: str | None
     authorized_by_public_key: str | None

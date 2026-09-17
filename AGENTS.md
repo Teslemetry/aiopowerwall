@@ -42,6 +42,23 @@ conventions; the invariants to preserve:
   v1r write path (`pypowerwall/tedapi/pypowerwall_tedapi.py`) — same gateway schema,
   actively maintained.
 
+## Authorized-client typed shape (`src/aiopowerwall/authorized_clients.py`)
+
+`PowerwallEnergySite.find_authorized_clients(raw=False)` returns
+`AuthorizedClients`/`AuthorizedClient` dataclasses and an `AuthorizedClientState`
+IntEnum mirroring `tesla_fleet_api.teslemetry.energysite`'s field names and
+`tesla_fleet_api.const`'s enum member names/values exactly, so a caller needs no
+local-vs-cloud conversion — **without importing `tesla_fleet_api`**
+(`tests/test_authorized_clients.py` checks parity by descriptor lookup when that
+package happens to be importable, skipping otherwise). `AuthorizedClient` lives
+here rather than in `models.py` because `models.AuthorizedClient` already names the
+raw-dict `TypedDict` from `PowerwallClient.list_authorized_clients()`; keep the two
+separate rather than merging or renaming either. An unrecognized enum value (e.g.
+a `state` number from newer gateway firmware) is returned unchanged — the raw
+int, never a raise or a guessed `None` — matching `tesla_fleet_api`'s own
+`_normalize_state` fallback; `_enum_suffix()` in `client.py` follows the same rule
+for the raw dict path.
+
 ## v1r local login (`src/aiopowerwall/transport.py`)
 
 `PowerwallClient(gateway_password=...)` takes the **full** gateway/WiFi password;

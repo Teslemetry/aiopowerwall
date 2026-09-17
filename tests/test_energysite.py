@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import pytest
 
-from aiopowerwall import PowerwallClient
+from aiopowerwall import AuthorizedClients, AuthorizedClientState, PowerwallClient
 from aiopowerwall.client import raw_to_scaled_reserve
 from aiopowerwall.energysite import (
     ISLAND_MODE_OFF_GRID,
@@ -255,6 +255,30 @@ async def test_list_authorized_clients_wraps_payload_under_response() -> None:
             "enable_line_switch_off": False,
         }
     }
+
+
+async def test_find_authorized_clients_returns_typed_result() -> None:
+    site, fake = _adapter()
+    result = await site.find_authorized_clients()
+    assert ("list_authorized_clients",) in fake.calls
+    assert isinstance(result, AuthorizedClients)
+    assert len(result.clients) == 1
+    client = result.clients[0]
+    assert client.public_key == "abcd"
+    assert client.state is AuthorizedClientState.VERIFIED
+    assert client.raw == {"public_key": "abcd", "state": "VERIFIED"}
+
+
+async def test_find_authorized_clients_unknown_state_is_not_dropped() -> None:
+    site, _fake = _adapter()
+
+    async def list_authorized_clients() -> dict[str, Any]:
+        return {"clients": [{"public_key": "abcd", "state": 99}], "enable_line_switch_off": False}
+
+    site._client.list_authorized_clients = list_authorized_clients  # type: ignore[method-assign]
+    result = await site.find_authorized_clients()
+    assert isinstance(result, AuthorizedClients)
+    assert result.clients[0].state == 99
 
 
 async def test_remove_authorized_client_delegates_and_returns_ok_envelope() -> None:

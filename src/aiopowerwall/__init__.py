@@ -10,6 +10,12 @@ an already-paired private key.
 
 from __future__ import annotations
 
+from .authorized_clients import (
+    AuthorizationRole,
+    AuthorizedClients,
+    AuthorizedClientState,
+    AuthorizedVerificationType,
+)
 from .client import (
     DEFAULT_GATEWAY_HOST,
     GRID_EXPORT_RULES,
@@ -51,7 +57,7 @@ from .models import (
     StatusPayload,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "DEFAULT_GATEWAY_HOST",
@@ -59,8 +65,12 @@ __all__ = [
     "ISLAND_MODE_OFF_GRID",
     "ISLAND_MODE_ON_GRID",
     "OPERATION_MODES",
+    "AuthorizationRole",
     "AuthorizedClient",
+    "AuthorizedClientState",
+    "AuthorizedClients",
     "AuthorizedClientsPayload",
+    "AuthorizedVerificationType",
     "BackupEvent",
     "BackupEventsPayload",
     "ComponentsPayload",

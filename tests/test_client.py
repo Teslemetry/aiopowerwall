@@ -107,6 +107,21 @@ async def test_list_authorized_clients_omits_optional_fields_when_absent() -> No
     assert client["authorized_by_public_key"] is None
 
 
+async def test_list_authorized_clients_unknown_state_does_not_raise() -> None:
+    """A gateway firmware newer than the `tesla-protocol` pin can report a
+    state number the enum doesn't know; it must come through as the raw int,
+    never raise `ValueError`."""
+    envelope = transport_pb2.MessageEnvelope()
+    resp = envelope.authorization.list_authorized_clients_response
+    entry = resp.clients.add()
+    entry.public_key = b"\x01\x02\x03"
+    entry.state = 99  # not a valid AuthorizedState member
+
+    pw = _client_for(envelope)
+    result = await pw.list_authorized_clients()
+    assert result["clients"][0]["state"] == 99
+
+
 async def test_list_authorized_clients_empty_list() -> None:
     envelope = transport_pb2.MessageEnvelope()
     envelope.authorization.list_authorized_clients_response.SetInParent()
