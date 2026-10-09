@@ -30,9 +30,9 @@ truncated value.
 
 ## Protobuf schema
 
-- TEG / FileStore / Authorization / signing messages come from the `tesla-protocol`
-  package; do not vendor a copy. Keep its `pyproject.toml` pin range wide so this
-  package can coexist with `tesla-fleet-api`.
+- Every protobuf message (TEG / FileStore / Authorization / GraphQL / Common /
+  signing) comes from the `tesla-protocol` package; do not vendor a copy. Keep its
+  `pyproject.toml` pin range wide so this package can coexist with `tesla-fleet-api`.
 - `tesla-protocol` field names are snake_case. Verify name and number before wiring a
   new message:
   `python -c "from tesla_protocol.energy_device import X_pb2; print(X_pb2.Y.DESCRIPTOR.fields_by_name.keys())"`.
@@ -41,11 +41,8 @@ truncated value.
   widening the pin's upper bound, install the new ceiling and rerun it; if the typo is
   fixed, look the field up under both spellings rather than pinning back.
 - Reuse `PowerwallClient._send_command_request` for any `MessageEnvelope` category;
-  do not add another `_send_*_request`.
-- Regenerate `src/aiopowerwall/proto/tedapi_pb2.py` with `protoc --python_out=.
-  tedapi.proto` from that directory, using a `protoc` whose gencode version is `<=`
-  the `protobuf` floor in `pyproject.toml`. Newer gencode hard-fails at import on an
-  older runtime.
+  do not add another `_send_*_request`. The GraphQL and system-info reads are the
+  exception: they keep the local HTTPS / installer header from `_local_envelope`.
 
 ## Release
 

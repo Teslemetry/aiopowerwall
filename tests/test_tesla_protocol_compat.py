@@ -11,7 +11,9 @@ from __future__ import annotations
 from tesla_protocol.energy_device import (
     authorization_api_pb2,
     authorization_types_pb2,
+    common_api_pb2,
     filestore_api_pb2,
+    graphql_api_pb2,
     signed_message_pb2,
     teg_api_pb2,
     transport_pb2,
@@ -53,6 +55,38 @@ def test_transport_pb2_symbols() -> None:
     assert hasattr(transport_pb2, "DELIVERY_CHANNEL_HERMES_COMMAND")
     envelope_fields = _field_names(transport_pb2.MessageEnvelope.DESCRIPTOR)
     assert {"delivery_channel", "teg", "authorization"} <= envelope_fields
+    assert transport_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS == 1
+    assert transport_pb2.LOCAL_PARTICIPANT_INSTALLER == 1
+
+
+def test_graphql_api_pb2_symbols() -> None:
+    assert graphql_api_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1 == 2
+    assert {"version", "query"} <= _field_names(graphql_api_pb2.SignedGraphQLQuery.DESCRIPTOR)
+    assert {"format", "query", "signature", "variables_json"} <= _field_names(
+        graphql_api_pb2.GraphQLAPIQueryRequest.DESCRIPTOR
+    )
+    assert "data" in _field_names(graphql_api_pb2.GraphQLAPIQueryResponse.DESCRIPTOR)
+    envelope = transport_pb2.MessageEnvelope.DESCRIPTOR.fields_by_name
+    assert envelope["graphql"].number == 16
+    assert envelope["common"].number == 4
+
+
+def test_common_api_pb2_system_info_layout() -> None:
+    """``get_firmware_details`` needs the layout the gateway sends; the pre-4.0
+    definition (``Din`` message at 2, enum at 5) fails to parse a real reply."""
+    fields = common_api_pb2.CommonAPIGetSystemInfoResponse.DESCRIPTOR.fields_by_name
+    expected = {
+        "device_id": 1,
+        "din": 2,
+        "firmware_version": 3,
+        "system_update": 5,
+        "device_type": 6,
+    }
+    assert expected.items() <= {name: f.number for name, f in fields.items()}.items()
+    assert fields["din"].message_type is None
+    assert common_api_pb2.CommonMessages.DESCRIPTOR.fields_by_name[
+        "get_system_info_request"
+    ].number == 2
 
 
 def test_filestore_api_pb2_symbols() -> None:

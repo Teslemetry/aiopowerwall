@@ -15,7 +15,7 @@ release that renames or drops one fails there, not at a live gateway call.
    (`X.Y.Z`), without touching the lock file:
    `uv run --with 'tesla-protocol==X.Y.Z' pytest tests/test_tesla_protocol_compat.py`
    `uv run --with 'tesla-protocol==X.Y.Z' pytest`
-   Also run the suite once against the floor (`tesla-protocol==1.4.0` today), so both
+   Also run the suite once against the floor (`tesla-protocol==4.0.0` today), so both
    ends of the range are tested.
 3. If the canary fails on `sheduling_info` (sic, `teg_api_pb2.BackupEvent` field 3):
    upstream may have fixed the typo. Do not pin back. In
@@ -26,7 +26,7 @@ release that renames or drops one fails there, not at a live gateway call.
 4. If any other assertion fails, look up the new name and number before you change code:
    `python -c "from tesla_protocol.energy_device import X_pb2; print(X_pb2.Y.DESCRIPTOR.fields_by_name.keys())"`
    Field names are snake_case.
-5. Edit only the upper bound in `pyproject.toml` (`"tesla-protocol>=1.4.0,<N"`). Keep
+5. Edit only the upper bound in `pyproject.toml` (`"tesla-protocol>=4.0.0,<N"`). Keep
    the range wide: `tesla-fleet-api` pins its own `tesla-protocol` floor, and both
    packages must install together in Home Assistant.
 6. Refresh the lock: `uv lock --upgrade-package tesla-protocol`.

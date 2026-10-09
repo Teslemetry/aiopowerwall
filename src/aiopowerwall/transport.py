@@ -194,9 +194,8 @@ class V1rTransport:
     async def post_v1r(self, envelope_bytes: bytes, din: str) -> bytes:
         """POST a signed RoutableMessage and return the inner protobuf bytes.
 
-        `envelope_bytes` is a serialized inner protobuf — typically a
-        ``tedapi_pb2.MessageEnvelope`` for GraphQL/firmware queries or a
-        ``transport_pb2.MessageEnvelope`` for FileStore / TEG commands.
+        `envelope_bytes` is a serialized inner protobuf — a
+        ``transport_pb2.MessageEnvelope``.
         """
         payload = await self._build_signed_request(envelope_bytes, din)
         url = f"https://{self._host}/tedapi/v1r"

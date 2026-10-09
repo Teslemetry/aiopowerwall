@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aiopowerwall"
-version = "0.4.1"
+version = "0.5.0"
 description = "Async Tesla Powerwall 3 client over the TEDAPI v1r RSA-signed LAN protocol."
 readme = "README.md"
 license = "MIT"
@@ -29,7 +29,7 @@ dependencies = [
     "aiohttp>=3.9",
     "cryptography>=41",
     "protobuf>=4.25",
-    "tesla-protocol>=1.4.0,<4",
+    "tesla-protocol>=4.0.0,<5",
 ]
 
 [project.optional-dependencies]
@@ -64,19 +64,12 @@ warn_unreachable = true
 files = ["src/aiopowerwall"]
 
 [[tool.mypy.overrides]]
-# Generated protobuf bindings ship without strict stubs; they're an
-# implementation detail of the transport.
-module = "aiopowerwall.proto.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 module = ["google.protobuf.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["src/aiopowerwall/proto/*_pb2.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "SIM", "RUF"]
