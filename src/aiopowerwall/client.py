@@ -34,6 +34,7 @@ from tesla_protocol.energy_device import (
     authorization_api_pb2,
     authorization_types_pb2,
     filestore_api_pb2,
+    graphql_api_pb2,
     teg_api_pb2,
     transport_pb2,
 )
@@ -55,7 +56,6 @@ from .models import (
     ManualBackupInfo,
     StatusPayload,
 )
-from .proto import tedapi_pb2
 from .transport import V1rTransport
 
 _LOGGER = logging.getLogger(__name__)
@@ -906,17 +906,15 @@ class PowerwallClient:
     ) -> str:
         """Run a GraphQL DeviceController/Components query and return raw JSON."""
         din = await self.connect()
-        msg = tedapi_pb2.Message()
-        envelope = msg.message
-        envelope.deliveryChannel = 1
-        envelope.sender.local = 1
-        envelope.recipient.din = din
-        envelope.payload.send.num = 2
-        envelope.payload.send.payload.value = 1
-        envelope.payload.send.payload.text = query_text
-        envelope.payload.send.code = code
-        envelope.payload.send.b.value = variables
-        msg.tail.value = 1
+        envelope = self._local_envelope(din)
+        request = envelope.graphql.query_request
+        request.format = graphql_api_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+        # `code` is Tesla's precomputed ECDSA signature over this exact query text.
+        request.query = graphql_api_pb2.SignedGraphQLQuery(
+            version=1, query=query_text.encode()
+        ).SerializeToString()
+        request.signature = code
+        request.variables_json.value = variables
 
         inner = await self._transport.post_v1r(
             envelope.SerializeToString(), din
@@ -929,21 +927,21 @@ class PowerwallClient:
 
         v1r returns a bare ``MessageEnvelope`` (no outer ``Message`` wrapper).
         """
-        envelope = tedapi_pb2.MessageEnvelope()
+        envelope = transport_pb2.MessageEnvelope()
         try:
             envelope.ParseFromString(inner_bytes)
         except Exception as err:
             raise PowerwallProtocolError(
                 f"Malformed v1r query response: {err}"
             ) from err
-        if not envelope.HasField("payload"):
+        if not envelope.graphql.HasField("query_response"):
             _LOGGER.warning(
                 "v1r query response missing payload (inner len=%d parsed=%s)",
                 len(inner_bytes),
                 str(envelope).replace("\n", " | "),
             )
             raise PowerwallProtocolError("v1r query response missing payload")
-        text: str = envelope.payload.recv.text
+        text: str = envelope.graphql.query_response.data
         if not text:
             raise PowerwallProtocolError("v1r query response payload is empty")
         return text
@@ -988,20 +986,15 @@ class PowerwallClient:
 
     async def _fetch_firmware(self) -> FirmwareDetails:
         din = await self.connect()
-        msg = tedapi_pb2.Message()
-        envelope = msg.message
-        envelope.deliveryChannel = 1
-        envelope.sender.local = 1
-        envelope.recipient.din = din
-        envelope.firmware.request = ""
-        msg.tail.value = 1
+        envelope = self._local_envelope(din)
+        envelope.common.get_system_info_request.SetInParent()
 
         inner = await self._transport.post_v1r(
             envelope.SerializeToString(), din
         )
 
         # v1r returns a MessageEnvelope (no Message wrapper).
-        response = tedapi_pb2.MessageEnvelope()
+        response = transport_pb2.MessageEnvelope()
         try:
             response.ParseFromString(inner)
         except Exception as err:
@@ -1009,22 +1002,38 @@ class PowerwallClient:
                 f"Malformed firmware response: {err}"
             ) from err
 
+        info = response.common.get_system_info_response
         return {
             "system": {
                 "gateway": {
-                    "partNumber": response.firmware.system.gateway.partNumber,
-                    "serialNumber": response.firmware.system.gateway.serialNumber,
+                    "partNumber": info.device_id.part_number,
+                    "serialNumber": info.device_id.serial_number,
                 },
-                "din": response.firmware.system.din,
+                "din": info.din,
                 "version": {
-                    "text": response.firmware.system.version.text,
-                    "githash": response.firmware.system.version.githash,
+                    "text": info.firmware_version.version,
+                    "githash": info.firmware_version.githash,
                 },
-                "five": response.firmware.system.five.d,
-                "six": response.firmware.system.six,
+                # `five`/`six` keep the keys this method returned before 0.5.0:
+                # system_update.update_status and the raw DeviceType number.
+                "five": info.system_update.update_status,
+                "six": info.device_type,
                 "wireless": {"device": []},
             }
         }
+
+    @staticmethod
+    def _local_envelope(din: str) -> transport_pb2.MessageEnvelope:
+        """Envelope header for the GraphQL and system-info reads.
+
+        These go out as a local HTTPS installer request, unlike the
+        ``_send_command_request`` commands (Hermes channel, mobile-app client).
+        """
+        envelope = transport_pb2.MessageEnvelope()
+        envelope.delivery_channel = transport_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+        envelope.sender.local = transport_pb2.LOCAL_PARTICIPANT_INSTALLER
+        envelope.recipient.din = din
+        return envelope
 
     @staticmethod
     def _json_payload(text: str, *, what: str) -> dict[str, Any]:
