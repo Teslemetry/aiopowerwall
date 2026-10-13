@@ -239,6 +239,17 @@ These operate on an already-fetched status payload — fetch once with
 | `scaled_to_raw_soc(percent)` | User-facing SoC % → raw value |
 | `raw_to_scaled_soc(percent)` | Raw SoC value → user-facing SoC % |
 
+These operate on an already-fetched `get_components()` payload (`kind` is
+`pch`, `pws`, `bms`, `hvp` or `baggr`; `slot` is the index in that list).
+
+| Function | Returns |
+| --- | --- |
+| `component_signal(components, kind, name, slot=0)` | One signal: `value`, else `textValue`, else `boolValue` |
+| `component_float(components, kind, name, slot=0)` | One numeric signal as `float` |
+| `component_serial(components, slot)` / `component_part_number(components, slot)` | Serial / part number of a component slot |
+| `pv_string_current(components, string, slot=0)` | PCH PV string current in A; idle noise below 1e-3 A reads 0.0 |
+| `battery_units(config, status, components)` | One `BatteryUnit` per Powerwall and expansion: role, DIN, serial, part number, component slot |
+
 ## EnergySite-compatible adapter
 
 `PowerwallEnergySite` wraps a `PowerwallClient` to present the same surface as
