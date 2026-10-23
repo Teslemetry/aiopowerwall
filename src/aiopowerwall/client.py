@@ -42,7 +42,9 @@ from tesla_protocol.energy_device import (
 
 from . import queries
 from .exceptions import (
+    PowerwallCommandError,
     PowerwallError,
+    PowerwallNotSupportedError,
     PowerwallProtocolError,
 )
 from .models import (
@@ -109,6 +111,10 @@ _WT_LEN: Final = 2
 # setpoint for weeks. Callers should use far shorter durations and renew.
 _MAX_DISPATCH_DURATION_SECONDS: Final = 86400
 _MAX_UINT32: Final = (1 << 32) - 1
+
+# ``google.rpc.Code.UNIMPLEMENTED``: the gateway answers a command its
+# firmware does not implement with ``common.error_response`` and this code.
+_STATUS_UNIMPLEMENTED: Final = 12
 
 # Field numbers within TEGMessages for islanding commands, encoded by hand
 # instead of via teg_api_pb2 to keep this narrow write path independent of
@@ -629,11 +635,12 @@ class PowerwallClient:
         confirms only that the request was accepted. Read
         :meth:`get_meters_aggregates` to see what the battery actually does.
         The gateway still applies its own reserve and grid limits; this
-        method adds none. Raises :class:`PowerwallProtocolError` if the reply
-        has no ``dispatch_battery_power_response`` (for example, on firmware
-        without this command).
+        method adds none. A new call replaces an active setpoint, power and
+        timer both. Raises :class:`PowerwallNotSupportedError` on firmware
+        without this command, and :class:`PowerwallProtocolError` if the
+        reply has no ``dispatch_battery_power_response``.
 
-        .. warning:: Not yet tested on hardware by this library.
+        Verified on Powerwall 3 firmware 26.26.4.
         """
         if (
             isinstance(power_watts, bool)
@@ -669,10 +676,10 @@ class PowerwallClient:
         Sends ``TEGMessages.dispatch_battery_power_request.resume_device_mode``;
         the gateway goes back to its configured operating mode. It does not
         cancel a manual backup event (see :meth:`cancel_max_backup`). The reply
-        is an empty acknowledgement; a missing one raises
-        :class:`PowerwallProtocolError`.
+        is an empty acknowledgement, also sent when no setpoint is active; a
+        missing one raises :class:`PowerwallProtocolError`.
 
-        .. warning:: Not yet tested on hardware by this library.
+        Verified on Powerwall 3 firmware 26.26.4.
         """
         din = await self.connect()
         await self._send_command_request(
@@ -693,7 +700,9 @@ class PowerwallClient:
         the time remaining. The reply is an empty acknowledgement; a missing
         one raises :class:`PowerwallProtocolError`.
 
-        .. warning:: Not yet tested on hardware by this library.
+        .. warning:: Powerwall 3 firmware 26.26.4 acknowledges this command,
+           but its effect is not verified: that firmware cannot report the
+           delay status.
         """
         if type(delay_hours) is not int or not 1 <= delay_hours <= _MAX_UINT32:
             raise ValueError("delay_hours must be a positive integer")
@@ -717,8 +726,8 @@ class PowerwallClient:
         """Return the battery-calibration delay counters via local v1r.
 
         Reads ``TEGMessages.get_delay_battery_calibration_status_response``.
-
-        .. warning:: Not yet tested on hardware by this library.
+        Raises :class:`PowerwallNotSupportedError` on firmware without this
+        command; Powerwall 3 firmware 26.26.4 does not implement it.
         """
         din = await self.connect()
         response_envelope = await self._send_command_request(
@@ -1245,6 +1254,11 @@ class PowerwallClient:
         corresponding ``*Messages`` class. The verbose builder approach (vs.
         inline construction) keeps the write helpers readable — these
         commands are small and uniform.
+
+        A reply carrying ``common.error_response`` in place of
+        ``response_field`` raises :class:`PowerwallCommandError`
+        (:class:`PowerwallNotSupportedError` for ``UNIMPLEMENTED``) unless
+        ``allow_missing_response`` is set.
         """
         command = message_cls()
         populate(getattr(command, request_field))
@@ -1279,6 +1293,14 @@ class PowerwallClient:
         ).HasField(response_field):
             if allow_missing_response:
                 return response
+            if response.common.HasField("error_response"):
+                status = response.common.error_response.status
+                error_cls = (
+                    PowerwallNotSupportedError
+                    if status.code == _STATUS_UNIMPLEMENTED
+                    else PowerwallCommandError
+                )
+                raise error_cls(request_field, status.code, status.message)
             _LOGGER.warning(
                 "%s response missing %s (request=%s inner len=%d hex=%s parsed=%s)",
                 category,

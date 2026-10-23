@@ -13,7 +13,12 @@ from typing import Any
 import pytest
 from tesla_protocol.energy_device import authorization_types_pb2, transport_pb2
 
-from aiopowerwall import PowerwallClient, PowerwallProtocolError
+from aiopowerwall import (
+    PowerwallClient,
+    PowerwallCommandError,
+    PowerwallNotSupportedError,
+    PowerwallProtocolError,
+)
 
 
 class _FakeTransport:
@@ -393,3 +398,53 @@ async def test_get_battery_calibration_delay_status_missing_response_raises() ->
     pw = _client_for(_dispatch_ack())
     with pytest.raises(PowerwallProtocolError):
         await pw.get_battery_calibration_delay_status()
+
+
+# ── gateway error status ─────────────────────────────────────────────────────
+
+# Verbatim reply from a Powerwall 3 on firmware 26.26.4 to
+# get_delay_battery_calibration_status_request: common.error_response with
+# status code 12 (UNIMPLEMENTED), "not implemented".
+_UNIMPLEMENTED_REPLY = bytes.fromhex(
+    "22170a150a13080c120f6e6f7420696d706c656d656e746564"
+)
+
+
+def _error_reply(code: int, message: str) -> transport_pb2.MessageEnvelope:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.common.error_response.status.code = code
+    envelope.common.error_response.status.message = message
+    return envelope
+
+
+async def test_unimplemented_reply_raises_not_supported() -> None:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.ParseFromString(_UNIMPLEMENTED_REPLY)
+    pw = _client_for(envelope)
+
+    with pytest.raises(PowerwallNotSupportedError) as excinfo:
+        await pw.get_battery_calibration_delay_status()
+
+    err = excinfo.value
+    assert isinstance(err, PowerwallProtocolError)
+    assert err.command == "get_delay_battery_calibration_status_request"
+    assert err.code == 12
+    assert err.status_message == "not implemented"
+    assert "not implemented" in str(err)
+
+
+async def test_other_error_status_raises_command_error() -> None:
+    pw = _client_for(_error_reply(7, "permission denied"))
+
+    with pytest.raises(PowerwallCommandError) as excinfo:
+        await pw.dispatch_battery_power(-500, 30)
+
+    assert not isinstance(excinfo.value, PowerwallNotSupportedError)
+    assert excinfo.value.code == 7
+    assert excinfo.value.status_message == "permission denied"
+
+
+async def test_error_status_tolerated_when_missing_response_allowed() -> None:
+    pw = _client_for(_error_reply(5, "no active event"))
+    await pw.cancel_max_backup()
+

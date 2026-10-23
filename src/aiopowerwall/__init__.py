@@ -49,9 +49,11 @@ from .energysite import (
 )
 from .exceptions import (
     PowerwallAuthenticationError,
+    PowerwallCommandError,
     PowerwallConnectionError,
     PowerwallError,
     PowerwallFaultError,
+    PowerwallNotSupportedError,
     PowerwallProtocolError,
     PowerwallRateLimitError,
 )
@@ -97,10 +99,12 @@ __all__ = [
     "PowerLocation",
     "PowerwallAuthenticationError",
     "PowerwallClient",
+    "PowerwallCommandError",
     "PowerwallConnectionError",
     "PowerwallEnergySite",
     "PowerwallError",
     "PowerwallFaultError",
+    "PowerwallNotSupportedError",
     "PowerwallProtocolError",
     "PowerwallRateLimitError",
     "SignalValue",
