@@ -8,10 +8,12 @@ LAN, or signing.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from tesla_protocol.energy_device import authorization_types_pb2, transport_pb2
 
-from aiopowerwall import PowerwallClient
+from aiopowerwall import PowerwallClient, PowerwallProtocolError
 
 
 class _FakeTransport:
@@ -239,3 +241,155 @@ async def test_get_backup_events_sends_request_over_v1r() -> None:
     sent.ParseFromString(transport.sent[0])
     assert sent.HasField("teg")
     assert sent.teg.HasField("get_backup_events_request")
+
+
+# ── dispatch_battery_power / resume_battery_operation ────────────────────────
+
+
+def _dispatch_ack() -> transport_pb2.MessageEnvelope:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.teg.dispatch_battery_power_response.SetInParent()
+    return envelope
+
+
+def _sent_teg(pw: PowerwallClient) -> transport_pb2.MessageEnvelope:
+    transport = pw._transport  # type: ignore[attr-defined]
+    assert len(transport.sent) == 1
+    sent = transport_pb2.MessageEnvelope()
+    sent.ParseFromString(transport.sent[0])
+    assert sent.HasField("teg")
+    return sent
+
+
+@pytest.mark.parametrize("watts", [-500.0, 0, 3300, 1250.5])
+async def test_dispatch_battery_power_sends_real_power(watts: float) -> None:
+    pw = _client_for(_dispatch_ack())
+    await pw.dispatch_battery_power(watts, 30)
+
+    sent = _sent_teg(pw)
+    assert sent.teg.WhichOneof("message") == "dispatch_battery_power_request"
+    assert (
+        sent.teg.DESCRIPTOR.fields_by_name["dispatch_battery_power_request"].number
+        == 37
+    )
+    request = sent.teg.dispatch_battery_power_request
+    # The schema has no oneof here, so check that only one variant is set.
+    assert request.HasField("real_power")
+    assert not request.HasField("resume_device_mode")
+    assert request.real_power.power_watts == watts
+    assert request.real_power.duration_seconds == 30
+    assert sent.recipient.din == "1234567-00-A--CJ2000000000"
+
+
+async def test_resume_battery_operation_sends_resume_device_mode() -> None:
+    pw = _client_for(_dispatch_ack())
+    await pw.resume_battery_operation()
+
+    request = _sent_teg(pw).teg.dispatch_battery_power_request
+    assert request.HasField("resume_device_mode")
+    assert not request.HasField("real_power")
+
+
+@pytest.mark.parametrize(
+    ("watts", "duration"),
+    [
+        (float("nan"), 30),
+        (float("inf"), 30),
+        (float("-inf"), 30),
+        (True, 30),
+        ("500", 30),
+        (500, 0),
+        (500, -1),
+        (500, 86401),
+        (500, 1.5),
+        (500, True),
+    ],
+)
+async def test_dispatch_battery_power_rejects_bad_input(
+    watts: object, duration: object
+) -> None:
+    pw = _client_for(_dispatch_ack())
+    with pytest.raises(ValueError):
+        await pw.dispatch_battery_power(watts, duration)  # type: ignore[arg-type]
+    assert pw._transport.sent == []  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("duration", [1, 86400])
+async def test_dispatch_battery_power_accepts_duration_bounds(duration: int) -> None:
+    pw = _client_for(_dispatch_ack())
+    await pw.dispatch_battery_power(-500, duration)
+    request = _sent_teg(pw).teg.dispatch_battery_power_request
+    assert request.real_power.duration_seconds == duration
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda pw: pw.dispatch_battery_power(-500, 30),
+        lambda pw: pw.resume_battery_operation(),
+    ],
+)
+async def test_dispatch_missing_ack_raises(call: Any) -> None:
+    wrong = transport_pb2.MessageEnvelope()
+    wrong.teg.cancel_manual_backup_event_response.SetInParent()
+    pw = _client_for(wrong)
+    with pytest.raises(PowerwallProtocolError):
+        await call(pw)
+
+
+# ── battery calibration delay ────────────────────────────────────────────────
+
+
+async def test_delay_battery_calibration_sends_delay_hours() -> None:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.teg.delay_battery_calibration_response.SetInParent()
+    pw = _client_for(envelope)
+    await pw.delay_battery_calibration(24)
+
+    sent = _sent_teg(pw)
+    assert sent.teg.WhichOneof("message") == "delay_battery_calibration_request"
+    assert sent.teg.delay_battery_calibration_request.delay_hours == 24
+
+
+@pytest.mark.parametrize("hours", [0, -1, 1.5, True, "24", 1 << 32])
+async def test_delay_battery_calibration_rejects_bad_input(hours: object) -> None:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.teg.delay_battery_calibration_response.SetInParent()
+    pw = _client_for(envelope)
+    with pytest.raises(ValueError):
+        await pw.delay_battery_calibration(hours)  # type: ignore[arg-type]
+    assert pw._transport.sent == []  # type: ignore[attr-defined]
+
+
+async def test_delay_battery_calibration_missing_ack_raises() -> None:
+    pw = _client_for(_dispatch_ack())
+    with pytest.raises(PowerwallProtocolError):
+        await pw.delay_battery_calibration(24)
+
+
+async def test_get_battery_calibration_delay_status_parses_response() -> None:
+    envelope = transport_pb2.MessageEnvelope()
+    status = envelope.teg.get_delay_battery_calibration_status_response
+    status.calibration_delays_left = 2
+    status.calibration_delay_remaining_seconds = 3600
+    status.max_calibration_delays = 3
+    pw = _client_for(envelope)
+
+    result = await pw.get_battery_calibration_delay_status()
+
+    assert result == {
+        "calibration_delays_left": 2,
+        "calibration_delay_remaining_seconds": 3600,
+        "max_calibration_delays": 3,
+    }
+    sent = _sent_teg(pw)
+    assert (
+        sent.teg.WhichOneof("message")
+        == "get_delay_battery_calibration_status_request"
+    )
+
+
+async def test_get_battery_calibration_delay_status_missing_response_raises() -> None:
+    pw = _client_for(_dispatch_ack())
+    with pytest.raises(PowerwallProtocolError):
+        await pw.get_battery_calibration_delay_status()

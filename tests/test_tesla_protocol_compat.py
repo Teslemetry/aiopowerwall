@@ -166,3 +166,48 @@ def test_teg_api_pb2_backup_event_scheduling_fields() -> None:
         msgs.schedule_manual_backup_event_request.scheduling_info.DESCRIPTOR
     )
     assert {"start_time", "duration_seconds", "priority"} <= scheduling_info_fields
+
+
+def _numbers(descriptor: object) -> dict[str, int]:
+    return {f.name: f.number for f in descriptor.fields}  # type: ignore[attr-defined]
+
+
+def test_teg_api_pb2_dispatch_battery_power_fields() -> None:
+    """``dispatch_battery_power`` / ``resume_battery_operation`` wire layout."""
+    teg = _numbers(teg_api_pb2.TEGMessages.DESCRIPTOR)
+    assert teg["dispatch_battery_power_request"] == 37
+    assert teg["dispatch_battery_power_response"] == 38
+
+    request = teg_api_pb2.TEGAPIDispatchBatteryPowerRequest.DESCRIPTOR
+    assert _numbers(request) == {"resume_device_mode": 1, "real_power": 2}
+    assert (
+        request.fields_by_name["resume_device_mode"].message_type
+        is teg_api_pb2.TEGAPIDispatchBatteryPowerRequest_ResumeDeviceOperatingMode.DESCRIPTOR
+    )
+
+    real_power = teg_api_pb2.TEGAPIDispatchBatteryPowerRequest_RealPowerCommand.DESCRIPTOR
+    assert _numbers(real_power) == {"power_watts": 1, "duration_seconds": 2}
+    fd = real_power.fields_by_name
+    assert fd["power_watts"].type == fd["power_watts"].TYPE_DOUBLE
+    assert fd["duration_seconds"].type == fd["duration_seconds"].TYPE_UINT32
+    assert _numbers(teg_api_pb2.TEGAPIDispatchBatteryPowerResponse.DESCRIPTOR) == {}
+
+
+def test_teg_api_pb2_battery_calibration_delay_fields() -> None:
+    """``delay_battery_calibration`` / ``get_battery_calibration_delay_status``."""
+    teg = _numbers(teg_api_pb2.TEGMessages.DESCRIPTOR)
+    assert teg["delay_battery_calibration_request"] == 75
+    assert teg["delay_battery_calibration_response"] == 76
+    assert teg["get_delay_battery_calibration_status_request"] == 77
+    assert teg["get_delay_battery_calibration_status_response"] == 78
+
+    assert _numbers(teg_api_pb2.TEGAPIDelayBatteryCalibrationRequest.DESCRIPTOR) == {
+        "delay_hours": 1
+    }
+    assert _numbers(
+        teg_api_pb2.TEGAPIGetDelayBatteryCalibrationStatusResponse.DESCRIPTOR
+    ) == {
+        "calibration_delays_left": 1,
+        "calibration_delay_remaining_seconds": 2,
+        "max_calibration_delays": 3,
+    }

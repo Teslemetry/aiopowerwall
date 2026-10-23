@@ -23,6 +23,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import time
 from collections.abc import Mapping
 from types import TracebackType
@@ -49,6 +50,7 @@ from .models import (
     AuthorizedClientsPayload,
     BackupEvent,
     BackupEventsPayload,
+    BatteryCalibrationDelayStatus,
     ComponentsPayload,
     ConfigPayload,
     ControllerPayload,
@@ -101,6 +103,12 @@ _SOC_OFFSET: Final = 5.0
 # envelopes — see :meth:`PowerwallClient._build_island_envelope`.
 _WT_VARINT: Final = 0
 _WT_LEN: Final = 2
+
+# Upper bound on a ``dispatch_battery_power`` setpoint duration (one day).
+# The wire field is uint32; this cap keeps a mistaken value from holding a
+# setpoint for weeks. Callers should use far shorter durations and renew.
+_MAX_DISPATCH_DURATION_SECONDS: Final = 86400
+_MAX_UINT32: Final = (1 << 32) - 1
 
 # Field numbers within TEGMessages for islanding commands, encoded by hand
 # instead of via teg_api_pb2 to keep this narrow write path independent of
@@ -599,6 +607,136 @@ class PowerwallClient:
             populate=lambda req: req.SetInParent(),
             allow_missing_response=True,
         )
+
+    async def dispatch_battery_power(
+        self, power_watts: float, duration_seconds: int
+    ) -> None:
+        """Request a timed battery power setpoint via local v1r.
+
+        Sends ``TEGMessages.dispatch_battery_power_request.real_power``.
+        ``power_watts`` is battery power in watts: **positive discharges,
+        negative charges**. The gateway holds the setpoint for
+        ``duration_seconds`` (1 to 86400) and then reverts to its configured
+        operating mode by itself. ``config.json``, the tariff and the backup
+        reserve are not changed.
+
+        Keep durations short (tens of seconds) and re-send to renew, so a
+        caller that stops or loses the connection cannot leave the battery
+        on a stale setpoint. Call :meth:`resume_battery_operation` to release
+        early.
+
+        The gateway's reply is an empty acknowledgement, not readback: it
+        confirms only that the request was accepted. Read
+        :meth:`get_meters_aggregates` to see what the battery actually does.
+        The gateway still applies its own reserve and grid limits; this
+        method adds none. Raises :class:`PowerwallProtocolError` if the reply
+        has no ``dispatch_battery_power_response`` (for example, on firmware
+        without this command).
+
+        .. warning:: Not yet tested on hardware by this library.
+        """
+        if (
+            isinstance(power_watts, bool)
+            or not isinstance(power_watts, (int, float))
+            or not math.isfinite(power_watts)
+        ):
+            raise ValueError("power_watts must be a finite number")
+        if type(duration_seconds) is not int or not (
+            1 <= duration_seconds <= _MAX_DISPATCH_DURATION_SECONDS
+        ):
+            raise ValueError(
+                "duration_seconds must be an integer from 1 to "
+                f"{_MAX_DISPATCH_DURATION_SECONDS}"
+            )
+        din = await self.connect()
+
+        def populate(req: Any) -> None:
+            req.real_power.power_watts = float(power_watts)
+            req.real_power.duration_seconds = duration_seconds
+
+        await self._send_command_request(
+            din,
+            category="teg",
+            message_cls=teg_api_pb2.TEGMessages,
+            request_field="dispatch_battery_power_request",
+            response_field="dispatch_battery_power_response",
+            populate=populate,
+        )
+
+    async def resume_battery_operation(self) -> None:
+        """Release a :meth:`dispatch_battery_power` setpoint via local v1r.
+
+        Sends ``TEGMessages.dispatch_battery_power_request.resume_device_mode``;
+        the gateway goes back to its configured operating mode. It does not
+        cancel a manual backup event (see :meth:`cancel_max_backup`). The reply
+        is an empty acknowledgement; a missing one raises
+        :class:`PowerwallProtocolError`.
+
+        .. warning:: Not yet tested on hardware by this library.
+        """
+        din = await self.connect()
+        await self._send_command_request(
+            din,
+            category="teg",
+            message_cls=teg_api_pb2.TEGMessages,
+            request_field="dispatch_battery_power_request",
+            response_field="dispatch_battery_power_response",
+            populate=lambda req: req.resume_device_mode.SetInParent(),
+        )
+
+    async def delay_battery_calibration(self, delay_hours: int) -> None:
+        """Postpone the gateway's next battery calibration via local v1r.
+
+        Sends ``TEGMessages.delay_battery_calibration_request`` with
+        ``delay_hours``. The gateway limits how many delays it allows; read
+        :meth:`get_battery_calibration_delay_status` for the delays left and
+        the time remaining. The reply is an empty acknowledgement; a missing
+        one raises :class:`PowerwallProtocolError`.
+
+        .. warning:: Not yet tested on hardware by this library.
+        """
+        if type(delay_hours) is not int or not 1 <= delay_hours <= _MAX_UINT32:
+            raise ValueError("delay_hours must be a positive integer")
+        din = await self.connect()
+
+        def populate(req: Any) -> None:
+            req.delay_hours = delay_hours
+
+        await self._send_command_request(
+            din,
+            category="teg",
+            message_cls=teg_api_pb2.TEGMessages,
+            request_field="delay_battery_calibration_request",
+            response_field="delay_battery_calibration_response",
+            populate=populate,
+        )
+
+    async def get_battery_calibration_delay_status(
+        self,
+    ) -> BatteryCalibrationDelayStatus:
+        """Return the battery-calibration delay counters via local v1r.
+
+        Reads ``TEGMessages.get_delay_battery_calibration_status_response``.
+
+        .. warning:: Not yet tested on hardware by this library.
+        """
+        din = await self.connect()
+        response_envelope = await self._send_command_request(
+            din,
+            category="teg",
+            message_cls=teg_api_pb2.TEGMessages,
+            request_field="get_delay_battery_calibration_status_request",
+            response_field="get_delay_battery_calibration_status_response",
+            populate=lambda req: req.SetInParent(),
+        )
+        status = response_envelope.teg.get_delay_battery_calibration_status_response
+        return {
+            "calibration_delays_left": status.calibration_delays_left,
+            "calibration_delay_remaining_seconds": (
+                status.calibration_delay_remaining_seconds
+            ),
+            "max_calibration_delays": status.max_calibration_delays,
+        }
 
     async def set_island_mode(
         self,

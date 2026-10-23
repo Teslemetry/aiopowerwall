@@ -38,6 +38,14 @@ class ManualBackupInfo(TypedDict, total=False):
     priority: int
 
 
+class BatteryCalibrationDelayStatus(TypedDict, total=False):
+    """Result of :meth:`PowerwallClient.get_battery_calibration_delay_status`."""
+
+    calibration_delays_left: int
+    calibration_delay_remaining_seconds: int
+    max_calibration_delays: int
+
+
 class BackupEventsPayload(TypedDict, total=False):
     """Result of :meth:`PowerwallClient.get_backup_events`."""
 

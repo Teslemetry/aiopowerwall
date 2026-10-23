@@ -106,6 +106,7 @@ so concurrent callers share one login.
 | `get_battery_soe_raw()` | Battery SoC percentage (**raw** physical scale) |
 | `get_grid_status()` | Grid status string |
 | `get_backup_events()` | Active and scheduled backup events |
+| `get_battery_calibration_delay_status()` | Calibration delays left, max delays, seconds remaining (not yet tested on hardware) |
 | `list_authorized_clients()` | Registered client keys, roles, and states |
 
 ### Writes and commands
@@ -133,6 +134,9 @@ so concurrent callers share one login.
 | `restore_from_curtailment()` | Restore mode + reserve captured by `curtail` |
 | `curtailment_active` (property) | True between `curtail` and `restore_from_curtailment` |
 | `remove_authorized_client(public_key)` | Un-pair a client key, revoking its access |
+| `dispatch_battery_power(watts, seconds)` | Timed battery power setpoint (not yet tested on hardware) |
+| `resume_battery_operation()` | Release a dispatch setpoint (not yet tested on hardware) |
+| `delay_battery_calibration(hours)` | Postpone the next battery calibration (not yet tested on hardware) |
 
 > **Removing a client key.** `remove_authorized_client` takes either raw DER
 > bytes or the base64 string exactly as `list_authorized_clients` reports it, so
@@ -151,6 +155,31 @@ so concurrent callers share one login.
 > actuating, so verify `get_status().islanding.contactorClosed` before relying
 > on it. `trigger_islanding` issues the explicit black-start command if the
 > mode-only request is a no-op on your gateway.
+
+> **Battery dispatch (not yet tested on hardware).**
+> `dispatch_battery_power(power_watts, duration_seconds)` sends a timed
+> battery power setpoint (`TEGMessages.dispatch_battery_power_request`,
+> `real_power`). A **positive** value discharges the battery and a
+> **negative** value charges it. `duration_seconds` must be an integer from 1
+> to 86400; when it ends, the gateway goes back to its configured operating
+> mode by itself. `resume_battery_operation()` ends the setpoint early
+> (`resume_device_mode`). Neither command changes `config.json`, the tariff or
+> the backup reserve, and a resume does not cancel a manual backup event.
+> Keep durations short (tens of seconds) and re-send to renew, so that a
+> stopped caller cannot leave the battery on an old setpoint. The gateway's
+> reply is an empty acknowledgement, not readback: read
+> `get_meters_aggregates()` to see what the battery does. The library adds no
+> reserve, grid-status or export checks. Support depends on gateway firmware;
+> if the reply has no acknowledgement, the method raises
+> `PowerwallProtocolError`. The sign convention comes from a third-party
+> Powerwall 3 report, not from a test by this library.
+
+> **Battery calibration delay (not yet tested on hardware).**
+> `delay_battery_calibration(delay_hours)` postpones the gateway's next
+> battery calibration (`delay_battery_calibration_request`).
+> `get_battery_calibration_delay_status()` returns
+> `calibration_delays_left`, `max_calibration_delays` and
+> `calibration_delay_remaining_seconds` exactly as the gateway reports them.
 
 > **Storm mode is not locally settable.** Storm Watch is a Tesla-cloud
 > feature with no local representation: `storm_mode_enabled` is absent from
