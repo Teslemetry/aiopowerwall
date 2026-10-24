@@ -75,6 +75,10 @@ and need the full password. For those, build the client with
 sends the full password:
 
 ```python
+from pathlib import Path
+from aiopowerwall import PowerwallClient
+
+pem = Path("tedapi_rsa_private.pem").read_bytes()
 pw = PowerwallClient.legacy_gateway(
     host="192.168.91.1",
     gateway_password="<full gateway/WiFi password>",
