@@ -170,6 +170,8 @@ class PowerwallClient:
         value used to join the Powerwall's own AP). The gateway's local
         login only accepts the last 5 characters of it; that truncation is
         applied automatically, so pass the full password here.
+        If you have a gateway that requires a legacy password to be 
+        passed in full, set ``usefullpassword`` to True here.
         """
         self._owns_session = session is None
         self._session = session or aiohttp.ClientSession()
