@@ -69,6 +69,19 @@ to join the Powerwall's own AP. The gateway's local login only accepts the
 last 5 characters of it; `aiopowerwall` derives that truncation for you, so
 pass the full password.
 
+Early Gateway 1 units (older Powerwall 2 sites) reject that truncated login
+and need the full password. For those, build the client with
+`PowerwallClient.legacy_gateway(...)`, which takes the same arguments and
+sends the full password:
+
+```python
+pw = PowerwallClient.legacy_gateway(
+    host="192.168.91.1",
+    gateway_password="<full gateway/WiFi password>",
+    rsa_private_key_pem=pem,
+)
+```
+
 ## No caching, no coalescing
 
 **Every method on `PowerwallClient` issues a fresh request to the gateway.**

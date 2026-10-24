@@ -13,6 +13,7 @@ from typing import Any
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from aiopowerwall.client import PowerwallClient
 from aiopowerwall.transport import V1rTransport, _customer_password
 
 
@@ -76,3 +77,40 @@ async def test_login_sends_last_5_chars_of_full_password() -> None:
     assert token == "test-token"
     assert len(session.sent_payloads) == 1
     assert session.sent_payloads[0]["password"] == "rd123"
+
+
+async def test_legacy_gateway_login_sends_full_password() -> None:
+    session = _FakeSession()
+    transport = V1rTransport(
+        host="192.168.91.1",
+        password="MyWiFiPassword123",
+        rsa_private_key_pem=_rsa_pem(),
+        session=session,  # type: ignore[arg-type]
+        legacy_gateway=True,
+    )
+
+    await transport.login()
+
+    assert session.sent_payloads[0]["password"] == "MyWiFiPassword123"
+
+
+async def test_client_legacy_gateway_constructor_sends_full_password() -> None:
+    session = _FakeSession()
+    default = PowerwallClient(
+        gateway_password="MyWiFiPassword123",
+        rsa_private_key_pem=_rsa_pem(),
+        session=session,  # type: ignore[arg-type]
+    )
+    legacy = PowerwallClient.legacy_gateway(
+        gateway_password="MyWiFiPassword123",
+        rsa_private_key_pem=_rsa_pem(),
+        session=session,  # type: ignore[arg-type]
+    )
+
+    await default._transport.login()
+    await legacy._transport.login()
+
+    assert [p["password"] for p in session.sent_payloads] == [
+        "rd123",
+        "MyWiFiPassword123",
+    ]

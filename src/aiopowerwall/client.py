@@ -162,6 +162,7 @@ class PowerwallClient:
         rsa_private_key_pem: bytes,
         session: aiohttp.ClientSession | None = None,
         timeout: float = 5.0,
+        _legacy_gateway: bool = False,
     ) -> None:
         """Create a client.
 
@@ -178,6 +179,7 @@ class PowerwallClient:
             rsa_private_key_pem=rsa_private_key_pem,
             session=self._session,
             timeout=timeout,
+            legacy_gateway=_legacy_gateway,
         )
         self._din: str | None = None
         self._connect_lock = asyncio.Lock()
@@ -187,6 +189,31 @@ class PowerwallClient:
         self._saved_real_mode: str | None = None
         self._saved_reserve_percent: int | None = None
         self._curtailment_active = False
+
+    @classmethod
+    def legacy_gateway(
+        cls,
+        *,
+        host: str = DEFAULT_GATEWAY_HOST,
+        gateway_password: str,
+        rsa_private_key_pem: bytes,
+        session: aiohttp.ClientSession | None = None,
+        timeout: float = 5.0,
+    ) -> PowerwallClient:
+        """Create a client for an early Gateway 1 (Powerwall 2) unit.
+
+        These units reject the last-5-characters login that the default
+        constructor sends, and need the full ``gateway_password`` instead.
+        Everything else is the same as the default constructor.
+        """
+        return cls(
+            host=host,
+            gateway_password=gateway_password,
+            rsa_private_key_pem=rsa_private_key_pem,
+            session=session,
+            timeout=timeout,
+            _legacy_gateway=True,
+        )
 
     # ── Lifecycle ───────────────────────────────────────────────────────────
 

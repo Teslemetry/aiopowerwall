@@ -103,9 +103,12 @@ class V1rTransport:
         *,
         session: aiohttp.ClientSession,
         timeout: float = 5.0,
+        legacy_gateway: bool = False,
     ) -> None:
         self._host = host
-        self._password = _customer_password(password)
+        # Early Gateway 1 (Powerwall 2) units reject the truncated password
+        # and need the full value.
+        self._password = password if legacy_gateway else _customer_password(password)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._token: str | None = None
