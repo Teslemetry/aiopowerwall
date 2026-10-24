@@ -162,6 +162,7 @@ class PowerwallClient:
         rsa_private_key_pem: bytes,
         session: aiohttp.ClientSession | None = None,
         timeout: float = 5.0,
+        usefullpassword: bool = False
     ) -> None:
         """Create a client.
 
@@ -178,6 +179,7 @@ class PowerwallClient:
             rsa_private_key_pem=rsa_private_key_pem,
             session=self._session,
             timeout=timeout,
+            usefullpassword=usefullpassword,
         )
         self._din: str | None = None
         self._connect_lock = asyncio.Lock()
