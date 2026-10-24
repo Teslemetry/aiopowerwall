@@ -26,3 +26,10 @@ test.py
 command_test.py
 sampledata.txt
 *.log
+src/LICENSE
+src/README.md
+src/.gitattributes
+*.auth
+*.fleetapi
+*.der
+src/fleet_tokens.json

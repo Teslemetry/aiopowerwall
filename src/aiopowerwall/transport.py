@@ -76,15 +76,19 @@ def _tlv(tag: int, value: bytes) -> bytes:
     return bytes([tag, len(value)]) + value
 
 
-def _customer_password(gateway_password: str) -> str:
+def _customer_password(gateway_password: str, usefullpassword: bool = False) -> str:
     """Derive the `/api/login/Basic` "customer" password from the gateway password.
 
     The gateway's local v1r login accepts only the *last 5 characters* of the
     gateway/WiFi password, not the full value - an undocumented Tesla
     convention that other local Powerwall clients (e.g. pypowerwall) already
     auto-derive rather than require callers to know out-of-band.
+
+    However, early Gateway 1 gateways for Powerwall 2 Powerwalls require a full
+    Legacy password, so if it truncated, the truncated password will not work.
+    Adding an optional boolean allows this class to be used for these aging Powerwalls
     """
-    return gateway_password[-5:]
+    return gateway_password[-5:] if not usefullpassword else gateway_password
 
 
 class V1rTransport:
@@ -103,9 +107,10 @@ class V1rTransport:
         *,
         session: aiohttp.ClientSession,
         timeout: float = 5.0,
+        usefullpassword: bool = False,
     ) -> None:
         self._host = host
-        self._password = _customer_password(password)
+        self._password = _customer_password(password, usefullpassword)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._token: str | None = None
