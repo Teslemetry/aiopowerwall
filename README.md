@@ -395,6 +395,11 @@ This project builds on the protocol research and reference implementation in
 Huge thanks to Jason and the pypowerwall contributors for reverse-engineering
 and documenting the TEDAPI protocol.
 
+Thanks also to [Matthew1471](https://github.com/Matthew1471) and
+[Tesla-API](https://github.com/Matthew1471/Tesla-API) for the local RSA key
+pairing research and for naming the dispatch battery power command
+(`TEGAPIDispatchBatteryPowerRequest`) in the TEG protobuf schema.
+
 ## License
 
 MIT (see `LICENSE`). Original pypowerwall copyright and license notice are
