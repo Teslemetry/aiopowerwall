@@ -227,6 +227,25 @@ class PowerwallEnergySite:
         await self._client.cancel_max_backup()
         return _ok_response()
 
+    async def dispatch_battery_power(
+        self, power_watts: float, duration_seconds: int
+    ) -> dict[str, Any]:
+        """Request a timed battery power setpoint — maps to
+        :meth:`PowerwallClient.dispatch_battery_power`.
+
+        ``power_watts`` is battery power in watts (positive discharges,
+        negative charges); the gateway holds it for ``duration_seconds``
+        (1 to 86400) and then reverts to its configured mode by itself.
+        """
+        await self._client.dispatch_battery_power(power_watts, duration_seconds)
+        return _ok_response()
+
+    async def resume_battery_operation(self) -> dict[str, Any]:
+        """Release a :meth:`dispatch_battery_power` setpoint — maps to
+        :meth:`PowerwallClient.resume_battery_operation`."""
+        await self._client.resume_battery_operation()
+        return _ok_response()
+
     async def get_backup_events(self) -> dict[str, Any]:
         """Return the active manual backup and scheduled backup events.
 
