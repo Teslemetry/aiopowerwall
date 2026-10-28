@@ -331,7 +331,8 @@ Conventions:
   wrap their payload under `response`.
 - **Implemented locally:** `operation`, `backup`, `grid_import_export`,
   `set_island_mode`, `go_off_grid`, `reconnect_grid`, `schedule_backup_event`,
-  `cancel_backup_event`, `get_backup_events`, `live_status`, `local_config`,
+  `cancel_backup_event`, `dispatch_battery_power`, `resume_battery_operation`,
+  `get_backup_events`, `live_status`, `local_config`,
   `list_authorized_clients`, and `find_authorized_clients`. Use the
   `ISLAND_MODE_OFF_GRID` (6) / `ISLAND_MODE_ON_GRID` (1) constants with
   `set_island_mode`.

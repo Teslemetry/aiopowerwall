@@ -82,6 +82,14 @@ class FakeClient:
     async def cancel_max_backup(self) -> None:
         self.calls.append(("cancel_max_backup",))
 
+    async def dispatch_battery_power(
+        self, power_watts: float, duration_seconds: int
+    ) -> None:
+        self.calls.append(("dispatch_battery_power", power_watts, duration_seconds))
+
+    async def resume_battery_operation(self) -> None:
+        self.calls.append(("resume_battery_operation",))
+
     # reads -----------------------------------------------------------------
     async def get_backup_events(self) -> dict[str, Any]:
         self.calls.append(("get_backup_events",))
@@ -230,6 +238,20 @@ async def test_cancel_backup_event_maps_to_client() -> None:
     site, fake = _adapter()
     result = await site.cancel_backup_event()
     assert fake.calls == [("cancel_max_backup",)]
+    assert result == _OK
+
+
+async def test_dispatch_battery_power_maps_to_client() -> None:
+    site, fake = _adapter()
+    result = await site.dispatch_battery_power(-2500.0, 30)
+    assert fake.calls == [("dispatch_battery_power", -2500.0, 30)]
+    assert result == _OK
+
+
+async def test_resume_battery_operation_maps_to_client() -> None:
+    site, fake = _adapter()
+    result = await site.resume_battery_operation()
+    assert fake.calls == [("resume_battery_operation",)]
     assert result == _OK
 
 
