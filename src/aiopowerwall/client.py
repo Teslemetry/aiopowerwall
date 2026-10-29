@@ -665,7 +665,7 @@ class PowerwallClient:
         regardless of the export setting (PW2/Backup Gateway 1, firmware
         26.34.0, third-party report); this method adds no checks. The gateway
         refuses, and does not clamp, a request above its power limit with
-        code 11 (seen at 10,000 W), which raises
+        code 11 (seen refusing 11,000 W against a 10,000 W limit), which raises
         :class:`PowerwallCommandError`. A new call replaces an active
         setpoint, power and timer both. Raises
         :class:`PowerwallNotSupportedError` on firmware without this command,
