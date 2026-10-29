@@ -10,6 +10,10 @@ class PowerwallError(Exception):
 class PowerwallConnectionError(PowerwallError):
     """The Powerwall gateway could not be reached or the request timed out."""
 
+    # tesla_fleet_api's Router fails over to the next backend only on errors
+    # marked failover-safe: the local gateway gave no usable answer.
+    failover_safe = True
+
 
 class PowerwallAuthenticationError(PowerwallError):
     """Authentication with the Powerwall failed.
@@ -18,9 +22,17 @@ class PowerwallAuthenticationError(PowerwallError):
     that indicate an unregistered or inactive RSA key.
     """
 
+    # tesla_fleet_api's Router fails over to the next backend only on errors
+    # marked failover-safe: the local gateway gave no usable answer.
+    failover_safe = True
+
 
 class PowerwallRateLimitError(PowerwallError):
     """The Powerwall returned 429/503 — back off before retrying."""
+
+    # tesla_fleet_api's Router fails over to the next backend only on errors
+    # marked failover-safe: the local gateway gave no usable answer.
+    failover_safe = True
 
 
 class PowerwallProtocolError(PowerwallError):
