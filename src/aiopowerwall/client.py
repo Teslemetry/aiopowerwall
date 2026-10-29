@@ -55,6 +55,8 @@ from .models import (
     BatteryCalibrationDelayStatus,
     ComponentsPayload,
     ConfigPayload,
+    ControllableDeviceProgram,
+    ControllableDeviceProgramsPayload,
     ControllerPayload,
     FirmwareDetails,
     ManualBackupInfo,
@@ -791,6 +793,96 @@ class PowerwallClient:
             ),
             "max_calibration_delays": status.max_calibration_delays,
         }
+
+    async def get_controllable_device_programs(
+        self, device_ids: list[str] | None = None
+    ) -> ControllableDeviceProgramsPayload:
+        """Return the load programs of Backup Switch / smart breaker devices.
+
+        Sends ``get_controllable_device_programs_request`` for ``device_ids``
+        (every device when ``None``) and returns the ``active_programs`` and
+        ``inactive_programs`` lists as plain dicts. An unrecognized
+        ``priority`` or ``contactor_state`` is returned as the raw int, and an
+        unset ``start`` / ``end`` / ``expiry`` is ``None``. A site with no
+        controllable devices returns two empty lists.
+        """
+        din = await self.connect()
+
+        def populate(req: Any) -> None:
+            req.device_ids.extend(device_ids or [])
+            req.SetInParent()
+
+        response_envelope = await self._send_command_request(
+            din,
+            category="teg",
+            message_cls=teg_api_pb2.TEGMessages,
+            request_field="get_controllable_device_programs_request",
+            response_field="get_controllable_device_programs_response",
+            populate=populate,
+        )
+        resp = response_envelope.teg.get_controllable_device_programs_response
+        return {
+            "active_programs": [
+                self._controllable_program(p) for p in resp.active_programs
+            ],
+            "inactive_programs": [
+                self._controllable_program(p) for p in resp.inactive_programs
+            ],
+        }
+
+    @staticmethod
+    def _controllable_program(program: Any) -> ControllableDeviceProgram:
+        schedule = program.schedule
+
+        def seconds(field: str) -> int | None:
+            return getattr(schedule, field).seconds if schedule.HasField(field) else None
+
+        return {
+            "key": {
+                "device_id": program.key.device_id,
+                "priority": _enum_suffix(
+                    teg_api_pb2.ControllableDeviceProgram_Key.Priority,
+                    program.key.priority,
+                    "PRIORITY_",
+                ),
+            },
+            "settings": {
+                "contactor_state": _enum_suffix(
+                    teg_api_pb2.ControllableDeviceProgram_Settings.ContactorState,
+                    program.settings.contactor_state,
+                    "CONTACTOR_STATE_",
+                ),
+            },
+            "schedule": {
+                "start": seconds("start"),
+                "end": seconds("end"),
+                "expiry": seconds("expiry"),
+            },
+        }
+
+    async def configure_ocpp(self, csms_base_url: str) -> None:
+        """Point the gateway at an OCPP central system via local v1r.
+
+        Sends ``configure_ocpp_request`` with ``csms_base_url``. Raises
+        :class:`PowerwallNotSupportedError` when the gateway answers
+        "not implemented" (code 12), as Powerwall 3 firmware 26.26.4 does, and
+        :class:`PowerwallCommandError` for any other refusal.
+        """
+        if not isinstance(csms_base_url, str) or not csms_base_url:
+            raise ValueError("csms_base_url must be a non-empty string")
+        din = await self.connect()
+
+        def populate(req: Any) -> None:
+            req.csms_base_url = csms_base_url
+
+        await self._send_command_request(
+            din,
+            category="teg",
+            message_cls=teg_api_pb2.TEGMessages,
+            request_field="configure_ocpp_request",
+            response_field="configure_ocpp_response",
+            populate=populate,
+        )
 
     async def set_island_mode(
         self,

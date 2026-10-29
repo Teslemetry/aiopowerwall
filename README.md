@@ -124,6 +124,7 @@ so concurrent callers share one login.
 | `get_grid_status()` | Grid status string |
 | `get_backup_events()` | Active and scheduled backup events |
 | `get_battery_calibration_delay_status()` | Calibration delays left, max delays, seconds remaining (not implemented on PW3 firmware 26.26.4) |
+| `get_controllable_device_programs(device_ids=None)` | Active and inactive Backup Switch / smart breaker load programs |
 | `list_authorized_clients()` | Registered client keys, roles, and states |
 
 ### Writes and commands
@@ -146,6 +147,7 @@ so concurrent callers share one login.
 | `set_island_mode(off_grid=, force=, …)` | Send `setIslandModeRequest` |
 | `go_off_grid(force=True)` | Convenience wrapper around `set_island_mode` |
 | `reconnect_grid()` | Convenience wrapper around `set_island_mode` |
+| `configure_ocpp(csms_base_url)` | Send `configure_ocpp_request` (code 12 "not implemented" on PW3 firmware 26.26.4 raises `PowerwallNotSupportedError`) |
 | `trigger_islanding()` | Send `triggerIslandingBlackStartRequest` |
 | `curtail(reserve_percent=100)` | Stop export via `backup` mode + reserve |
 | `restore_from_curtailment()` | Restore mode + reserve captured by `curtail` |

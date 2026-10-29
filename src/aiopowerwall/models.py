@@ -46,6 +46,27 @@ class BatteryCalibrationDelayStatus(TypedDict, total=False):
     max_calibration_delays: int
 
 
+class ControllableDeviceProgram(TypedDict):
+    """One load program from :meth:`PowerwallClient.get_controllable_device_programs`.
+
+    ``priority`` and ``contactor_state`` are the enum name with its prefix
+    stripped (e.g. ``"CUSTOMER_DEFAULT"``, ``"OPEN"``), or the raw int for a
+    value this package does not recognize. Schedule times are epoch seconds,
+    or ``None`` when unset.
+    """
+
+    key: dict[str, Any]
+    settings: dict[str, Any]
+    schedule: dict[str, int | None]
+
+
+class ControllableDeviceProgramsPayload(TypedDict):
+    """Result of :meth:`PowerwallClient.get_controllable_device_programs`."""
+
+    active_programs: list[ControllableDeviceProgram]
+    inactive_programs: list[ControllableDeviceProgram]
+
+
 class BackupEventsPayload(TypedDict, total=False):
     """Result of :meth:`PowerwallClient.get_backup_events`."""
 
@@ -100,6 +121,8 @@ __all__ = [
     "BackupEventsPayload",
     "ComponentsPayload",
     "ConfigPayload",
+    "ControllableDeviceProgram",
+    "ControllableDeviceProgramsPayload",
     "ControllerPayload",
     "FirmwareDetails",
     "ManualBackupInfo",
