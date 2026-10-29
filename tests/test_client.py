@@ -494,3 +494,89 @@ async def test_set_island_mode_rejected_raises_command_error() -> None:
 
 async def test_set_island_mode_without_response_is_tolerated() -> None:
     await _client_for(transport_pb2.MessageEnvelope()).reconnect_grid()
+
+
+# ── controllable device programs / OCPP ──────────────────────────────────────
+
+
+def _programs_envelope() -> transport_pb2.MessageEnvelope:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.teg.get_controllable_device_programs_response.SetInParent()
+    return envelope
+
+
+async def test_get_controllable_device_programs_empty() -> None:
+    pw = _client_for(_programs_envelope())
+
+    assert await pw.get_controllable_device_programs() == {
+        "active_programs": [],
+        "inactive_programs": [],
+    }
+
+
+async def test_get_controllable_device_programs_one_program() -> None:
+    envelope = _programs_envelope()
+    resp = envelope.teg.get_controllable_device_programs_response
+    program = resp.active_programs.add()
+    program.key.device_id = "breaker-1"
+    program.key.priority = 5000
+    program.settings.contactor_state = 1
+    program.schedule.start.seconds = 1_700_000_000
+    program.schedule.end.seconds = 1_700_003_600
+    unknown = resp.inactive_programs.add()
+    unknown.key.device_id = "breaker-2"
+    unknown.key.priority = 777
+    unknown.settings.contactor_state = 9
+    pw = _client_for(envelope)
+
+    result = await pw.get_controllable_device_programs(["breaker-1"])
+
+    assert result["active_programs"] == [
+        {
+            "key": {"device_id": "breaker-1", "priority": "CUSTOMER_DEFAULT"},
+            "settings": {"contactor_state": "OPEN"},
+            "schedule": {
+                "start": 1_700_000_000,
+                "end": 1_700_003_600,
+                "expiry": None,
+            },
+        }
+    ]
+    assert result["inactive_programs"][0]["key"]["priority"] == 777
+    assert result["inactive_programs"][0]["settings"]["contactor_state"] == 9
+    sent = transport_pb2.MessageEnvelope.FromString(
+        pw._transport.sent[0]  # type: ignore[attr-defined]
+    )
+    request = sent.teg.get_controllable_device_programs_request
+    assert list(request.device_ids) == ["breaker-1"]
+
+
+async def test_configure_ocpp_success() -> None:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.teg.configure_ocpp_response.SetInParent()
+    pw = _client_for(envelope)
+
+    await pw.configure_ocpp("wss://csms.example.com/ocpp")
+
+    sent = transport_pb2.MessageEnvelope.FromString(
+        pw._transport.sent[0]  # type: ignore[attr-defined]
+    )
+    assert sent.teg.configure_ocpp_request.csms_base_url == (
+        "wss://csms.example.com/ocpp"
+    )
+
+
+async def test_configure_ocpp_unimplemented_raises_not_supported() -> None:
+    pw = _client_for(_error_reply(12, "not implemented"))
+
+    with pytest.raises(PowerwallNotSupportedError) as excinfo:
+        await pw.configure_ocpp("wss://csms.example.com/ocpp")
+
+    assert excinfo.value.command == "configure_ocpp_request"
+    assert excinfo.value.code == 12
+
+
+async def test_configure_ocpp_rejects_empty_url() -> None:
+    pw = _client_for(_error_reply(12, "not implemented"))
+    with pytest.raises(ValueError):
+        await pw.configure_ocpp("")
