@@ -11,7 +11,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from tesla_protocol.energy_device import authorization_types_pb2, transport_pb2
+from tesla_protocol.energy_device import (
+    authorization_types_pb2,
+    teg_api_pb2,
+    transport_pb2,
+)
 
 from aiopowerwall import (
     PowerwallClient,
@@ -449,3 +453,44 @@ async def test_error_status_tolerated_when_missing_response_allowed() -> None:
     pw = _client_for(_error_reply(5, "no active event"))
     await pw.cancel_max_backup()
 
+
+
+# ── set_island_mode result ───────────────────────────────────────────────────
+
+
+def _island_reply(result: int) -> transport_pb2.MessageEnvelope:
+    envelope = transport_pb2.MessageEnvelope()
+    envelope.teg.set_island_mode_response.result = result
+    return envelope
+
+
+async def test_set_island_mode_accepted() -> None:
+    pw = _client_for(
+        _island_reply(teg_api_pb2.TEG_SET_ISLAND_MODE_RESULT_ACCEPTED)
+    )
+    await pw.go_off_grid()
+    assert len(pw._transport.sent) == 1  # type: ignore[attr-defined]
+
+
+async def test_set_island_mode_rejected_raises_command_error() -> None:
+    pw = _client_for(
+        _island_reply(
+            teg_api_pb2.TEG_SET_ISLAND_MODE_RESULT_REJECTED_EXCESSIVE_SOLAR
+        )
+    )
+    with pytest.raises(PowerwallCommandError) as excinfo:
+        await pw.go_off_grid()
+
+    assert excinfo.value.command == "set_island_mode_request"
+    assert (
+        excinfo.value.code
+        == teg_api_pb2.TEG_SET_ISLAND_MODE_RESULT_REJECTED_EXCESSIVE_SOLAR
+    )
+    assert (
+        excinfo.value.status_message
+        == "TEG_SET_ISLAND_MODE_RESULT_REJECTED_EXCESSIVE_SOLAR"
+    )
+
+
+async def test_set_island_mode_without_response_is_tolerated() -> None:
+    await _client_for(transport_pb2.MessageEnvelope()).reconnect_grid()
