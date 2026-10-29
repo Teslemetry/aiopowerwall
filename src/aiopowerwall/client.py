@@ -81,6 +81,15 @@ GRID_EXPORT_RULES: Final = ("battery_ok", "pv_only", "never")
 # setIslandModeRequest mode values used by both PW2 and PW3.
 _ISLAND_MODE_OFF_GRID: Final = 6
 _ISLAND_MODE_ON_GRID: Final = 1
+# TEGSetIslandModeResult values meaning the gateway refused the request.
+_SET_ISLAND_MODE_REJECTIONS: Final = frozenset(
+    {
+        teg_api_pb2.TEG_SET_ISLAND_MODE_RESULT_REJECTED_NOT_READY_FOR_ISLANDING,
+        teg_api_pb2.TEG_SET_ISLAND_MODE_RESULT_REJECTED_LOAD_DROP_EXPECTED,
+        teg_api_pb2.TEG_SET_ISLAND_MODE_RESULT_REJECTED_LOW_ENERGY,
+        teg_api_pb2.TEG_SET_ISLAND_MODE_RESULT_REJECTED_EXCESSIVE_SOLAR,
+    }
+)
 
 # Tesla scales the user-facing backup reserve (what the app and Fleet API
 # show, 0-100) into the gateway's raw ``config.json`` value as
@@ -795,6 +804,11 @@ class PowerwallClient:
         ``mode=6`` requests off-grid (contactor open); ``mode=1`` requests
         grid reconnect. ``force=True`` is required for some Powerwalls.
 
+        Raises :class:`PowerwallCommandError` if the gateway answers with a
+        ``REJECTED_*`` ``TEGSetIslandModeResult`` (for example
+        ``REJECTED_EXCESSIVE_SOLAR``); ``code`` is the enum value and
+        ``status_message`` its name.
+
         .. note:: Verified on a Powerwall 3 gateway that this local v1r
             command **does** operate the contactor — ``go_off_grid`` opened it
             and ``reconnect_grid`` closed it, with :meth:`get_status`
@@ -822,14 +836,46 @@ class PowerwallClient:
             "set_island_mode: mode=%d force=%s din=%s", mode, force, din
         )
         inner = await self._transport.post_v1r(envelope_bytes, din)
-        # The response envelope echoes a TEGAPISetIslandModeResponse with
-        # ``result`` (int32) — but our checked-in TEGMessages doesn't model
-        # those fields, so a successful post (no fault) is the strongest
-        # local confirmation available.
-        _LOGGER.debug(
-            "set_island_mode: gateway returned %d bytes (no protobuf parse)",
-            len(inner),
-        )
+        self._check_set_island_mode_result(inner)
+
+    @staticmethod
+    def _check_set_island_mode_result(inner: bytes) -> None:
+        """Raise :class:`PowerwallCommandError` if the gateway rejected the request.
+
+        The reply carries ``TEGAPISetIslandModeResponse.result``
+        (``TEGSetIslandModeResult``). Only the four ``REJECTED_*`` values
+        raise, with ``code`` set to the enum value and ``status_message`` to
+        its name; a reply that omits the response, or carries ``INVALID`` or a
+        value this ``tesla-protocol`` does not know, is logged and treated as
+        before rather than guessed at.
+        """
+        response = transport_pb2.MessageEnvelope()
+        try:
+            response.ParseFromString(inner)
+        except Exception:
+            _LOGGER.debug(
+                "set_island_mode: unparseable reply (%d bytes)", len(inner)
+            )
+            return
+        if response.common.HasField("error_response"):
+            status = response.common.error_response.status
+            raise PowerwallCommandError(
+                "set_island_mode_request", status.code, status.message
+            )
+        if not response.HasField("teg") or not response.teg.HasField(
+            "set_island_mode_response"
+        ):
+            _LOGGER.debug(
+                "set_island_mode: reply has no set_island_mode_response "
+                "(%d bytes)",
+                len(inner),
+            )
+            return
+        result = response.teg.set_island_mode_response.result
+        _LOGGER.debug("set_island_mode: gateway result=%d", result)
+        if result in _SET_ISLAND_MODE_REJECTIONS:
+            name = teg_api_pb2.TEGSetIslandModeResult.Name(result)
+            raise PowerwallCommandError("set_island_mode_request", result, name)
 
     async def go_off_grid(
         self,
