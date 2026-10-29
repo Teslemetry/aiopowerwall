@@ -661,19 +661,28 @@ class PowerwallClient:
         The gateway's reply is an empty acknowledgement, not readback: it
         confirms only that the request was accepted. Read
         :meth:`get_meters_aggregates` to see what the battery actually does.
-        The gateway still applies its own reserve and grid limits; this
-        method adds none. A new call replaces an active setpoint, power and
-        timer both. Raises :class:`PowerwallNotSupportedError` on firmware
-        without this command, and :class:`PowerwallProtocolError` if the
-        reply has no ``dispatch_battery_power_response``.
+        A dispatch can discharge below the backup reserve and export
+        regardless of the export setting (PW2/Backup Gateway 1, firmware
+        26.34.0, third-party report); this method adds no checks. The gateway
+        refuses, and does not clamp, a request above its power limit with
+        code 11 (seen at 10,000 W), which raises
+        :class:`PowerwallCommandError`. A new call replaces an active
+        setpoint, power and timer both. Raises
+        :class:`PowerwallNotSupportedError` on firmware without this command,
+        and :class:`PowerwallProtocolError` if the reply has no
+        ``dispatch_battery_power_response``.
 
         Verified on Powerwall 3 firmware 26.26.4.
         """
-        if (
-            isinstance(power_watts, bool)
-            or not isinstance(power_watts, (int, float))
-            or not math.isfinite(power_watts)
+        if isinstance(power_watts, bool) or not isinstance(
+            power_watts, (int, float)
         ):
+            raise ValueError("power_watts must be a finite number")
+        try:
+            finite = math.isfinite(power_watts)
+        except OverflowError:  # int too large for a float
+            finite = False
+        if not finite:
             raise ValueError("power_watts must be a finite number")
         if type(duration_seconds) is not int or not (
             1 <= duration_seconds <= _MAX_DISPATCH_DURATION_SECONDS

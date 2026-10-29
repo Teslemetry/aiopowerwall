@@ -301,6 +301,7 @@ async def test_resume_battery_operation_sends_resume_device_mode() -> None:
         (float("nan"), 30),
         (float("inf"), 30),
         (float("-inf"), 30),
+        (10**1000, 30),
         (True, 30),
         ("500", 30),
         (500, 0),
