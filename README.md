@@ -188,14 +188,23 @@ so concurrent callers share one login.
 > stopped caller cannot leave the battery on an old setpoint. The gateway's
 > reply is an empty acknowledgement, not readback: read
 > `get_meters_aggregates()` to see what the battery does. The library adds no
-> reserve, grid-status or export checks. Support depends on gateway firmware;
-> firmware without the command raises `PowerwallNotSupportedError`.
+> reserve, grid-status or export checks, and a dispatch can discharge below
+> the backup reserve and export regardless of the export setting (reported on
+> a PW2 with Backup Gateway 1, firmware 26.34.0, by a third party). The
+> gateway refuses, and does not clamp, a request above its power limit with
+> code 11 (seen refusing 11,000 W against a 10,000 W limit), which raises
+> `PowerwallCommandError`. Support depends on gateway firmware; firmware
+> without the command raises `PowerwallNotSupportedError`.
 >
 > Verified on a Powerwall 3 (firmware 26.26.4) with solar charging the
 > battery at about 4 kW: -500 W held the battery at ~500 W charging and +500 W
 > at ~500 W discharging, each within about 4 s, with the surplus solar
 > exported. The gateway resumed normal operation within about 3 s of
 > `resume_battery_operation()`, and by itself when the duration ran out.
+>
+> Third parties report dispatch working on a PW2 with Backup Gateway 1 at
+> firmware 26.34.0
+> ([pypowerwall#440](https://github.com/jasonacox/pypowerwall/pull/440)).
 
 > **Battery calibration delay.**
 > `delay_battery_calibration(delay_hours)` postpones the gateway's next
